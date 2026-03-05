@@ -1,12 +1,27 @@
+import os
+import bcrypt
+
 from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from models import User, UserUpdate
-import bcrypt
 from datetime import datetime
 from database import get_db, session, audit_collection, engine, Base
 
+ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS")
+ALLOW_METHODS = os.getenv("ALLOW_METHODS")
+
 app = FastAPI()
+
+# Enable CORS for frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[f'{ALLOW_ORIGINS}'],
+    allow_credentials=True,
+    allow_methods=[f'{ALLOW_METHODS}'],
+    allow_headers=["*"],
+)
 
 Base.metadata.create_all(engine)
 
