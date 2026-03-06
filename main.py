@@ -10,6 +10,7 @@ from datetime import datetime
 from database import get_db, session, audit_collection, engine, Base
 
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS")
+ALLOW_ORIGIN = os.getenv("ALLOW_ORIGIN")
 ALLOW_METHODS = os.getenv("ALLOW_METHODS")
 
 app = FastAPI()
