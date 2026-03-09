@@ -3,11 +3,11 @@ import bcrypt
 
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 from models import User, UserUpdate
 from datetime import datetime
-from database import get_db, session, audit_collection, engine, Base
+from database import get_db, audit_collection, engine, Base
 
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS")
 ALLOW_ORIGIN = os.getenv("ALLOW_ORIGIN")
@@ -26,13 +26,12 @@ app.add_middleware(
 
 Base.metadata.create_all(engine)
 
-db = get_db()
-
 @app.patch("/users/{user_id}")
 def update_user(
     user_id: int,
     update: UserUpdate,
-    updater_id: int = Header(..., alias="X-User-ID")
+    updater_id: int = Header(..., alias="X-User-ID"),
+    db: Session = Depends(get_db)
 ):
     result = db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -57,8 +56,6 @@ def update_user(
 
     user.updated_by = updater_id
     user.updated_at = datetime.utcnow()
-
-    db.commit()
 
     changes = {k: v for k, v in update.dict(exclude_unset=True).items() if k != 'password'}
     if 'password' in update.dict(exclude_unset=True):
