@@ -20,7 +20,11 @@ def get_db():
     """Function to get a SQLAlchemy database session"""
     db = session()
     try:
-        return db
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
