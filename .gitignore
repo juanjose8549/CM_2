@@ -1,5 +1,6 @@
 .env
 .venv/ 
+.virtualenv/
 
 __pycache__/
 .DS_Store
