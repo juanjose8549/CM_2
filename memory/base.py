@@ -75,22 +75,22 @@ class MemoryBackend(ABC):
     """Abstract base class for memory storage backends."""
 
     @abstractmethod
-    async def create_session(self, session_id: str, user_id: Optional[int] = None) -> SessionMemory:
+    def create_session(self, session_id: str, user_id: Optional[int] = None) -> SessionMemory:
         """Create a new conversation session."""
         pass
 
     @abstractmethod
-    async def get_session(self, session_id: str) -> Optional[SessionMemory]:
+    def get_session(self, session_id: str) -> Optional[SessionMemory]:
         """Retrieve a session by ID."""
         pass
 
     @abstractmethod
-    async def save_message(self, session_id: str, message: Message) -> bool:
+    def save_message(self, session_id: str, message: Message) -> bool:
         """Save a message to a session."""
         pass
 
     @abstractmethod
-    async def get_conversation_history(
+    def get_conversation_history(
         self,
         session_id: str,
         limit: Optional[int] = None
@@ -99,11 +99,11 @@ class MemoryBackend(ABC):
         pass
 
     @abstractmethod
-    async def delete_session(self, session_id: str) -> bool:
+    def delete_session(self, session_id: str) -> bool:
         """Delete a session and its messages."""
         pass
 
     @abstractmethod
-    async def list_sessions(self, user_id: Optional[int] = None) -> List[str]:
+    def list_sessions(self, user_id: Optional[int] = None) -> List[str]:
         """List all session IDs, optionally filtered by user."""
         pass

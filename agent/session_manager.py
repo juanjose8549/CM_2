@@ -13,10 +13,17 @@ class SessionManager:
     """Manages AI agent sessions - creation, lookup, and cleanup."""
 
     def __init__(self, use_mongo: bool = True):
+        """
+        Initialize session manager.
+        
+        Args:
+            use_mongo: If True, uses MongoDB for persistence.
+                       If False, uses in-memory storage (better for development/testing).
+        """
         self.memory: MemoryBackend = MongoMemory() if use_mongo else InMemoryMemory()
         self._file_store: Dict[str, Dict] = {}  # session_id -> {file_path, filename, content_type}
 
-    async def get_or_create_session(
+    def get_or_create_session(
         self,
         session_id: Optional[str] = None,
         user_id: Optional[int] = None
@@ -32,27 +39,27 @@ class SessionManager:
             SessionMemory object
         """
         if session_id:
-            session = await self.memory.get_session(session_id)
+            session = self.memory.get_session(session_id)
             if session:
                 return session
         
         # Create new session
         new_session_id = session_id or str(uuid.uuid4())
-        return await self.memory.create_session(new_session_id, user_id)
+        return self.memory.create_session(new_session_id, user_id)
 
-    async def add_user_message(self, session_id: str, content: str) -> Message:
+    def add_user_message(self, session_id: str, content: str) -> Message:
         """Add a user message to the conversation."""
         message = Message(role="user", content=content)
-        await self.memory.save_message(session_id, message)
+        self.memory.save_message(session_id, message)
         return message
 
-    async def add_assistant_message(self, session_id: str, content: str) -> Message:
+    def add_assistant_message(self, session_id: str, content: str) -> Message:
         """Add an assistant message to the conversation."""
         message = Message(role="assistant", content=content)
-        await self.memory.save_message(session_id, message)
+        self.memory.save_message(session_id, message)
         return message
 
-    async def add_tool_call_message(
+    def add_tool_call_message(
         self,
         session_id: str,
         tool_name: str,
@@ -69,16 +76,16 @@ class SessionManager:
                 "result_success": result.get("success", False)
             }
         )
-        await self.memory.save_message(session_id, message)
+        self.memory.save_message(session_id, message)
         return message
 
-    async def get_history(
+    def get_history(
         self,
         session_id: str,
         limit: Optional[int] = None
     ):
         """Get conversation history for a session."""
-        return await self.memory.get_conversation_history(session_id, limit)
+        return self.memory.get_conversation_history(session_id, limit)
 
     def store_uploaded_file(
         self,
@@ -102,17 +109,17 @@ class SessionManager:
         """Clear the uploaded file reference for a session."""
         self._file_store.pop(session_id, None)
 
-    async def delete_session(self, session_id: str) -> bool:
+    def delete_session(self, session_id: str) -> bool:
         """Delete a session and all its data."""
         self._file_store.pop(session_id, None)
-        return await self.memory.delete_session(session_id)
+        return self.memory.delete_session(session_id)
 
-    async def build_conversation_context(self, session_id: str) -> str:
+    def build_conversation_context(self, session_id: str) -> str:
         """
         Build a summarized context string from conversation history.
         Used for the system prompt.
         """
-        messages = await self.memory.get_conversation_history(session_id, limit=20)
+        messages = self.memory.get_conversation_history(session_id, limit=20)
         
         if not messages:
             return "No hay historial previo en esta conversación."

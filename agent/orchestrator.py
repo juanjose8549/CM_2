@@ -2,7 +2,7 @@
 Agent Orchestrator - The brain of the AI Agent.
 Coordinates skills, LLM interactions, and conversation flow.
 """
-from typing import Dict, Any, Optional, List, Callable
+from typing import Dict, Any, Optional, List
 import json
 
 from skills.base import Skill
@@ -22,10 +22,10 @@ class AgentOrchestrator:
 
     def __init__(self, llm_client=None, llm_config: Optional[Dict] = None):
         self.skills: Dict[str, Skill] = {}
-        self.session_manager = SessionManager(use_mongo=True)
-        self.llm_client = llm_client  # OpenAI or Anthropic client
+        self.session_manager = SessionManager(use_mongo=False)  # Default: in-memory for dev
+        self.llm_client = llm_client
         self.llm_config = llm_config or {
-            "model": "gpt-4",  # or "claude-3-opus-20240229"
+            "model": "gpt-4",
             "temperature": 0.7,
             "max_tokens": 2000
         }
@@ -84,26 +84,18 @@ class AgentOrchestrator:
         4. Send to LLM with function calling
         5. If LLM requests a skill execution -> execute it
         6. Return response to user
-        
-        Args:
-            session_id: Conversation session ID
-            user_id: Authenticated user ID
-            message: User's message in natural language
-        
-        Returns:
-            Dict with agent response and any follow-up requirements
         """
         # 1. Get or create session
-        session = await self.session_manager.get_or_create_session(session_id, user_id)
+        session = self.session_manager.get_or_create_session(session_id, user_id)
 
         # 2. Save user message
-        await self.session_manager.add_user_message(session_id, message)
+        self.session_manager.add_user_message(session_id, message)
 
         # 3. Check if there's a pending file for this session
         pending_file = self.session_manager.get_uploaded_file(session_id)
 
         # 4. Build conversation context
-        history_context = await self.session_manager.build_conversation_context(session_id)
+        history_context = self.session_manager.build_conversation_context(session_id)
         history_count = len(session.messages)
 
         system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
@@ -113,7 +105,6 @@ class AgentOrchestrator:
             history_count=history_count
         )
 
-        # If there's a pending file, add it to context
         if pending_file:
             system_prompt += (
                 f"\n\n## Archivo Pendiente\n"
@@ -128,7 +119,6 @@ class AgentOrchestrator:
             {"role": "system", "content": system_prompt}
         ]
         
-        # Add history (last 20 messages max)
         for msg in session.messages[-20:]:
             role_map = {
                 "user": "user",
@@ -140,7 +130,6 @@ class AgentOrchestrator:
             content = msg.content
             
             if msg.role == "tool_call":
-                # Tool calls are represented as function results
                 conversation_messages.append({
                     "role": "function",
                     "name": msg.metadata.get("tool", "unknown"),
@@ -149,15 +138,13 @@ class AgentOrchestrator:
             else:
                 conversation_messages.append({"role": role, "content": content})
 
-        # Add current user message
         conversation_messages.append({"role": "user", "content": message})
 
-        # 6. Call LLM
+        # 6. Call LLM or deterministic mode
         try:
             if self.llm_client:
                 response = await self._call_llm(conversation_messages)
             else:
-                # No LLM configured - use deterministic mode
                 response = await self._deterministic_response(
                     message, pending_file, session_id
                 )
@@ -171,7 +158,7 @@ class AgentOrchestrator:
             }
 
         # 7. Save assistant response
-        await self.session_manager.add_assistant_message(
+        self.session_manager.add_assistant_message(
             session_id, response.get("response", "")
         )
 
@@ -187,19 +174,8 @@ class AgentOrchestrator:
     async def _call_llm(self, messages: List[Dict]) -> Dict[str, Any]:
         """
         Call the LLM with function calling support.
-        
-        Supports both OpenAI and Anthropic formats.
+        Placeholder for OpenAI/Anthropic integration.
         """
-        # This is a placeholder - actual implementation depends on the LLM provider
-        # For OpenAI:
-        # response = await self.llm_client.chat.completions.create(
-        #     model=self.llm_config["model"],
-        #     messages=messages,
-        #     tools=self.get_tools_for_llm(),
-        #     tool_choice="auto"
-        # )
-        #
-        # For now, fall back to deterministic mode
         return await self._deterministic_response(
             messages[-1]["content"] if messages else "", None, ""
         )
@@ -212,28 +188,29 @@ class AgentOrchestrator:
     ) -> Dict[str, Any]:
         """
         Deterministic response mode when no LLM is configured.
-        Uses simple intent matching to handle common requests.
-        This is a fallback for development/testing.
+        Uses simple intent matching as fallback for development.
         """
         message_lower = message.lower().strip()
 
-        # Handle file upload intent
-        if pending_file and any(word in message_lower for word in [
-            "validar", "validate", "revisar", "check", "escanea",
-            "leer", "read", "muestra", "show", "contenido"
-        ]):
+        # ============================================================
+        # PRIORITY 1: If there's a pending file, process it
+        # ============================================================
+        if pending_file:
             file_path = pending_file["file_path"]
             filename = pending_file["filename"]
 
-            if "validar" in message_lower or "validate" in message_lower or "revisar" in message_lower:
+            if any(word in message_lower for word in [
+                "validar", "validate", "revisar", "check", "escanea",
+                "analiza", "examina"
+            ]):
                 skill = self.skills.get("validate_excel")
                 if skill:
                     result = await skill.execute({
                         "file_path": file_path,
                         "filename": filename
                     })
+                    self.session_manager.clear_uploaded_file(session_id)
                     if result["success"]:
-                        self.session_manager.clear_uploaded_file(session_id)
                         return {
                             "response": result.get("summary", "Validación completada."),
                             "finished": True,
@@ -244,15 +221,19 @@ class AgentOrchestrator:
                             "response": f"No pude validar el archivo: {result.get('error', 'Error desconocido')}",
                             "finished": True
                         }
-            elif "leer" in message_lower or "read" in message_lower or "contenido" in message_lower:
+
+            if any(word in message_lower for word in [
+                "leer", "read", "contenido", "muestra", "show",
+                "extrae", "datos"
+            ]):
                 skill = self.skills.get("read_excel")
                 if skill:
                     result = await skill.execute({
                         "file_path": file_path,
                         "filename": filename
                     })
+                    self.session_manager.clear_uploaded_file(session_id)
                     if result["success"]:
-                        self.session_manager.clear_uploaded_file(session_id)
                         return {
                             "response": result.get("summary", "Lectura completada."),
                             "finished": True,
@@ -264,23 +245,42 @@ class AgentOrchestrator:
                             "finished": True
                         }
 
-        # Handle user-related intents
+            # If there's a pending file but user said something else
+            return {
+                "response": (
+                    f"Tienes el archivo **'{filename}'** pendiente. "
+                    f"¿Quieres que lo **valide** (revise si es seguro) o que **lea** su contenido?"
+                ),
+                "finished": False
+            }
+
+        # ============================================================
+        # PRIORITY 2: Handle user-related intents
+        # ============================================================
         if any(word in message_lower for word in ["usuarios", "users", "lista", "list", "todos"]):
             skill = self.skills.get("list_users")
             if skill:
                 result = await skill.execute({})
-                if result["success"]:
+                if result["success"] and result.get("users"):
                     users_list = "\n".join(
                         f"  - #{u['id']}: {u['name']} {u['surname']} ({'activo' if u['is_active'] else 'inactivo'})"
                         for u in result.get("users", [])
                     )
                     return {
-                        "response": f"Hay **{result['total']} usuarios** en el sistema:\n{users_list}",
+                        "response": f"📋 Hay **{result['total']} usuarios** en el sistema:\n{users_list}",
+                        "finished": True,
+                        "tool_executed": "list_users"
+                    }
+                else:
+                    return {
+                        "response": "📋 No hay usuarios registrados en el sistema.",
                         "finished": True,
                         "tool_executed": "list_users"
                     }
 
-        # Check if message is about uploading
+        # ============================================================
+        # PRIORITY 3: Check if user wants to upload a file
+        # ============================================================
         if any(word in message_lower for word in ["excel", "archivo", "file", "subir", "upload"]):
             return {
                 "response": (
@@ -292,7 +292,9 @@ class AgentOrchestrator:
                 "finished": False
             }
 
-        # Greetings
+        # ============================================================
+        # PRIORITY 4: Greetings
+        # ============================================================
         if any(word in message_lower for word in ["hola", "hello", "hi", "buenas", "saludos"]):
             return {
                 "response": (
@@ -305,7 +307,9 @@ class AgentOrchestrator:
                 "finished": False
             }
 
-        # Default response
+        # ============================================================
+        # PRIORITY 5: Default response
+        # ============================================================
         return {
             "response": (
                 "No estoy seguro de cómo ayudarte con eso. Estas son las cosas que puedo hacer:\n\n"
@@ -329,7 +333,7 @@ class AgentOrchestrator:
         """
         self.session_manager.store_uploaded_file(session_id, file_path, filename, content_type)
 
-        await self.session_manager.add_user_message(
+        self.session_manager.add_user_message(
             session_id,
             f"[Subió el archivo: {filename}]"
         )
@@ -341,7 +345,7 @@ class AgentOrchestrator:
             f"- **Leerlo** (extraer su contenido)"
         )
 
-        await self.session_manager.add_assistant_message(session_id, response)
+        self.session_manager.add_assistant_message(session_id, response)
 
         return {
             "session_id": session_id,

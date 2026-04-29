@@ -162,8 +162,8 @@ async def get_chat_history(
 ):
     """Get the conversation history for a session."""
     try:
-        session = await agent.session_manager.get_or_create_session(session_id, x_user_id)
-        messages = await agent.session_manager.get_history(session_id)
+        session = agent.session_manager.get_or_create_session(session_id, x_user_id)
+        messages = agent.session_manager.get_history(session_id)
         
         return JSONResponse(content={
             "session_id": session_id,
@@ -189,7 +189,7 @@ async def delete_session(
 ):
     """Delete a conversation session."""
     try:
-        success = await agent.session_manager.delete_session(session_id)
+        success = agent.session_manager.delete_session(session_id)
         if success:
             return JSONResponse(content={
                 "message": f"Sesión {session_id} eliminada exitosamente"
@@ -211,7 +211,7 @@ async def list_sessions(
 ):
     """List all active sessions for the current user."""
     try:
-        sessions = await agent.session_manager.memory.list_sessions(user_id=x_user_id)
+        sessions = agent.session_manager.memory.list_sessions(user_id=x_user_id)
         return JSONResponse(content={
             "user_id": x_user_id,
             "sessions": sessions,
