@@ -1,151 +1,22 @@
-import os
-import bcrypt
-import tempfile
-import json
-
-from fastapi import FastAPI, HTTPException, Depends, Header, File, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Depends, Header
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 from models import User, UserUpdate
+import bcrypt
 from datetime import datetime
-from database import get_db, audit_collection, engine, Base
-from excel_validator import validate_excel_safety, get_safe_excel_content
-
-ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS")
-ALLOW_ORIGIN = os.getenv("ALLOW_ORIGIN")
-ALLOW_METHODS = os.getenv("ALLOW_METHODS")
+from database import get_db, session, audit_collection, engine, Base
 
 app = FastAPI()
 
-# Enable CORS for frontend
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[f'{ALLOW_ORIGINS}',f'{ALLOW_ORIGIN}'],
-    allow_credentials=True,
-    allow_methods=[f'{ALLOW_METHODS}'],
-    allow_headers=["*"],
-)
-
 Base.metadata.create_all(engine)
 
-@app.post("/excel/validate")
-async def validate_excel(file: UploadFile = File(...)):
-    """
-    Valida un archivo Excel:
-    1. Verifica que sea .xlsx
-    2. Escanea en busca de código malicioso
-    3. Retorna resultado de validación
-    """
-    # Validar extensión
-    if not file.filename.endswith('.xlsx'):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Formato de archivo no válido: {file.filename}. Solo se permiten archivos .xlsx"
-        )
-    
-    # Validar tipo MIME
-    if file.content_type not in [
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'application/octet-stream',
-    ]:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Tipo de contenido no válido: {file.content_type}"
-        )
-    
-    # Guardar archivo temporalmente
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
-            content = await file.read()
-            tmp_file.write(content)
-            tmp_path = tmp_file.name
-        
-        # Validar el archivo Excel
-        validation_result = validate_excel_safety(tmp_path)
-        
-        response = {
-            "filename": file.filename,
-            "file_size": len(content),
-            "safe": validation_result["safe"],
-            "validation": validation_result,
-        }
-        
-        return JSONResponse(content=response)
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al procesar el archivo: {str(e)}")
-    finally:
-        # Limpiar archivo temporal
-        import os as os_module
-        try:
-            os_module.unlink(tmp_path)
-        except:
-            pass
-
-@app.post("/excel/read")
-async def read_excel(file: UploadFile = File(...)):
-    """
-    Lee un archivo Excel validado y retorna su contenido.
-    Primero valida que sea seguro, luego extrae los datos.
-    """
-    # Validar extensión
-    if not file.filename.endswith('.xlsx'):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Formato de archivo no válido: {file.filename}. Solo se permiten archivos .xlsx"
-        )
-    
-    # Guardar archivo temporalmente
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
-            content = await file.read()
-            tmp_file.write(content)
-            tmp_path = tmp_file.name
-        
-        # Primero validar seguridad
-        validation_result = validate_excel_safety(tmp_path)
-        
-        if not validation_result["safe"]:
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "error": "El archivo contiene código malicioso",
-                    "details": validation_result["errors"],
-                    "malicious_patterns": validation_result["details"]["malicious_patterns_found"],
-                }
-            )
-        
-        # Si es seguro, leer el contenido
-        safe_content = get_safe_excel_content(tmp_path)
-        
-        response = {
-            "filename": file.filename,
-            "file_size": len(content),
-            "safe": True,
-            "data": safe_content,
-        }
-        
-        return JSONResponse(content=response)
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al procesar el archivo: {str(e)}")
-    finally:
-        # Limpiar archivo temporal
-        import os as os_module
-        try:
-            os_module.unlink(tmp_path)
-        except:
-            pass
-
+db = get_db()
 
 @app.patch("/users/{user_id}")
 def update_user(
-        user_id: int,
-        update: UserUpdate,
-        updater_id: int = Header(..., alias="X-User-ID"),
-        db: Session = Depends(get_db)
+    user_id: int,
+    update: UserUpdate,
+    updater_id: int = Header(..., alias="X-User-ID")
 ):
     result = db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -170,6 +41,8 @@ def update_user(
 
     user.updated_by = updater_id
     user.updated_at = datetime.utcnow()
+
+    db.commit()
 
     changes = {k: v for k, v in update.dict(exclude_unset=True).items() if k != 'password'}
     if 'password' in update.dict(exclude_unset=True):
