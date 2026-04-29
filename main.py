@@ -1,186 +1,221 @@
+"""
+AI Agent - FastAPI Application
+Transforms the original user management + Excel validation service into
+an intelligent conversational agent.
+"""
 import os
-import bcrypt
 import tempfile
-import json
+import uuid
+from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Depends, Header, File, UploadFile
+from fastapi import FastAPI, HTTPException, Header, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-from models import User, UserUpdate
-from datetime import datetime
-from database import get_db, audit_collection, engine, Base
-from excel_validator import validate_excel_safety, get_safe_excel_content
+from dotenv import load_dotenv
 
-ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS")
-ALLOW_ORIGIN = os.getenv("ALLOW_ORIGIN")
-ALLOW_METHODS = os.getenv("ALLOW_METHODS")
+from agent.orchestrator import AgentOrchestrator
 
-app = FastAPI()
+load_dotenv()
 
-# Enable CORS for frontend
+# ---------------------------------------------------------------------------
+# App Configuration
+# ---------------------------------------------------------------------------
+ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "*")
+ALLOW_ORIGIN = os.getenv("ALLOW_ORIGIN", "*")
+ALLOW_METHODS = os.getenv("ALLOW_METHODS", "*")
+
+app = FastAPI(
+    title="AI Agent Service",
+    description="Agente conversacional para gestión de usuarios y análisis de archivos Excel",
+    version="2.0.0"
+)
+
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[f'{ALLOW_ORIGINS}',f'{ALLOW_ORIGIN}'],
+    allow_origins=[ALLOW_ORIGINS, ALLOW_ORIGIN],
     allow_credentials=True,
-    allow_methods=[f'{ALLOW_METHODS}'],
+    allow_methods=[ALLOW_METHODS],
     allow_headers=["*"],
 )
 
-Base.metadata.create_all(engine)
+# ---------------------------------------------------------------------------
+# Agent Initialization
+# ---------------------------------------------------------------------------
+agent = AgentOrchestrator()
 
-@app.post("/excel/validate")
-async def validate_excel(file: UploadFile = File(...)):
-    """
-    Valida un archivo Excel:
-    1. Verifica que sea .xlsx
-    2. Escanea en busca de código malicioso
-    3. Retorna resultado de validación
-    """
-    # Validar extensión
-    if not file.filename.endswith('.xlsx'):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Formato de archivo no válido: {file.filename}. Solo se permiten archivos .xlsx"
-        )
-    
-    # Validar tipo MIME
-    if file.content_type not in [
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'application/octet-stream',
-    ]:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Tipo de contenido no válido: {file.content_type}"
-        )
-    
-    # Guardar archivo temporalmente
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
-            content = await file.read()
-            tmp_file.write(content)
-            tmp_path = tmp_file.name
-        
-        # Validar el archivo Excel
-        validation_result = validate_excel_safety(tmp_path)
-        
-        response = {
-            "filename": file.filename,
-            "file_size": len(content),
-            "safe": validation_result["safe"],
-            "validation": validation_result,
-        }
-        
-        return JSONResponse(content=response)
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al procesar el archivo: {str(e)}")
-    finally:
-        # Limpiar archivo temporal
-        import os as os_module
-        try:
-            os_module.unlink(tmp_path)
-        except:
-            pass
+print("\n" + "="*60)
+print("  🤖 AI AGENT SERVICE")
+print("="*60)
+print("\n📋 Skills registrados:")
+for name, skill in agent.skills.items():
+    file_req = "📎" if skill.requires_file_upload else ""
+    destructive = "⚠️" if skill.is_destructive else ""
+    print(f"  {file_req}{destructive} {name}")
+print("="*60 + "\n")
 
-@app.post("/excel/read")
-async def read_excel(file: UploadFile = File(...)):
-    """
-    Lee un archivo Excel validado y retorna su contenido.
-    Primero valida que sea seguro, luego extrae los datos.
-    """
-    # Validar extensión
-    if not file.filename.endswith('.xlsx'):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Formato de archivo no válido: {file.filename}. Solo se permiten archivos .xlsx"
-        )
-    
-    # Guardar archivo temporalmente
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
-            content = await file.read()
-            tmp_file.write(content)
-            tmp_path = tmp_file.name
-        
-        # Primero validar seguridad
-        validation_result = validate_excel_safety(tmp_path)
-        
-        if not validation_result["safe"]:
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "error": "El archivo contiene código malicioso",
-                    "details": validation_result["errors"],
-                    "malicious_patterns": validation_result["details"]["malicious_patterns_found"],
-                }
-            )
-        
-        # Si es seguro, leer el contenido
-        safe_content = get_safe_excel_content(tmp_path)
-        
-        response = {
-            "filename": file.filename,
-            "file_size": len(content),
-            "safe": True,
-            "data": safe_content,
-        }
-        
-        return JSONResponse(content=response)
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al procesar el archivo: {str(e)}")
-    finally:
-        # Limpiar archivo temporal
-        import os as os_module
-        try:
-            os_module.unlink(tmp_path)
-        except:
-            pass
-
-
-@app.patch("/users/{user_id}")
-def update_user(
-        user_id: int,
-        update: UserUpdate,
-        updater_id: int = Header(..., alias="X-User-ID"),
-        db: Session = Depends(get_db)
-):
-    result = db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # Validate
-    if update.password is not None and not update.password.strip():
-        raise HTTPException(status_code=400, detail="Invalid password")
-    if update.is_active is not None and not isinstance(update.is_active, bool):
-        raise HTTPException(status_code=400, detail="Invalid is_active")
-
-    # Update fields
-    if update.name is not None:
-        user.name = update.name
-    if update.surname is not None:
-        user.surname = update.surname
-    if update.password is not None:
-        user.password_hash = bcrypt.hashpw(update.password.encode(), bcrypt.gensalt()).decode()
-    if update.is_active is not None:
-        user.is_active = update.is_active
-
-    user.updated_by = updater_id
-    user.updated_at = datetime.utcnow()
-
-    changes = {k: v for k, v in update.dict(exclude_unset=True).items() if k != 'password'}
-    if 'password' in update.dict(exclude_unset=True):
-        changes['password_updated'] = True
-
-    log = {
-        "user_id": user_id,
-        "updated_by": updater_id,
-        "updated_at": user.updated_at.isoformat(),
-        "changes": changes
+# ---------------------------------------------------------------------------
+# Health Check
+# ---------------------------------------------------------------------------
+@app.get("/")
+async def root():
+    return {
+        "service": "AI Agent Service",
+        "version": "2.0.0",
+        "status": "online",
+        "skills": list(agent.skills.keys())
     }
-    audit_collection.insert_one(log)
 
-    return {"message": "User updated successfully"}
+@app.get("/health")
+async def health():
+    return {"status": "healthy"}
+
+# ---------------------------------------------------------------------------
+# Chat Endpoint (Main Agent Interface)
+# ---------------------------------------------------------------------------
+@app.post("/chat")
+async def chat(
+    message: str = Form(...),
+    session_id: Optional[str] = Form(None),
+    x_user_id: int = Header(..., alias="X-User-ID"),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID")
+):
+    """
+    Main chat endpoint for the AI Agent.
+    
+    Send a message in natural language and the agent will:
+    - Understand your intent
+    - Use the appropriate tools if needed
+    - Respond in natural language
+    
+    Headers:
+    - X-User-ID: Your user ID (required)
+    - X-Session-ID: Session ID to continue a conversation (optional)
+    
+    Body (form-data):
+    - message: Your message in natural language (required)
+    - session_id: Alternative way to provide session ID (optional)
+    """
+    sid = session_id or x_session_id or str(uuid.uuid4())
+
+    try:
+        result = await agent.process_message(
+            session_id=sid,
+            user_id=x_user_id,
+            message=message
+        )
+        return JSONResponse(content=result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing message: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# File Upload Endpoint
+# ---------------------------------------------------------------------------
+@app.post("/chat/{session_id}/upload")
+async def upload_file(
+    session_id: str,
+    file: UploadFile = File(...),
+    x_user_id: int = Header(..., alias="X-User-ID")
+):
+    """
+    Upload a file (Excel) to be processed by the agent.
+    
+    The agent will remember the file for the current session.
+    After uploading, tell the agent what to do with it (validate or read).
+    """
+    if not file.filename.endswith('.xlsx'):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Formato de archivo no válido: {file.filename}. Solo se permiten archivos .xlsx"
+        )
+
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
+            content = await file.read()
+            tmp_file.write(content)
+            temp_path = tmp_file.name
+
+        result = await agent.handle_file_upload(
+            session_id=session_id,
+            file_path=temp_path,
+            filename=file.filename,
+            content_type=file.content_type or "application/octet-stream"
+        )
+
+        return JSONResponse(content=result)
+
+    except Exception as e:
+        if temp_path and os.path.exists(temp_path):
+            os.unlink(temp_path)
+        raise HTTPException(status_code=500, detail=f"Error al procesar el archivo: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# Session Management Endpoints
+# ---------------------------------------------------------------------------
+@app.get("/chat/{session_id}/history")
+async def get_chat_history(
+    session_id: str,
+    x_user_id: int = Header(..., alias="X-User-ID")
+):
+    """Get the conversation history for a session."""
+    try:
+        session = await agent.session_manager.get_or_create_session(session_id, x_user_id)
+        messages = await agent.session_manager.get_history(session_id)
+        
+        return JSONResponse(content={
+            "session_id": session_id,
+            "message_count": len(messages),
+            "messages": [
+                {
+                    "role": m.role,
+                    "content": m.content[:500] if m.content else "",
+                    "timestamp": m.timestamp.isoformat(),
+                    "metadata": m.metadata
+                }
+                for m in messages
+            ]
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting history: {str(e)}")
+
+
+@app.delete("/chat/{session_id}")
+async def delete_session(
+    session_id: str,
+    x_user_id: int = Header(..., alias="X-User-ID")
+):
+    """Delete a conversation session."""
+    try:
+        success = await agent.session_manager.delete_session(session_id)
+        if success:
+            return JSONResponse(content={
+                "message": f"Sesión {session_id} eliminada exitosamente"
+            })
+        else:
+            raise HTTPException(status_code=404, detail="Sesión no encontrada")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting session: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# List Active Sessions
+# ---------------------------------------------------------------------------
+@app.get("/sessions")
+async def list_sessions(
+    x_user_id: int = Header(..., alias="X-User-ID")
+):
+    """List all active sessions for the current user."""
+    try:
+        sessions = await agent.session_manager.memory.list_sessions(user_id=x_user_id)
+        return JSONResponse(content={
+            "user_id": x_user_id,
+            "sessions": sessions,
+            "total": len(sessions)
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing sessions: {str(e)}")

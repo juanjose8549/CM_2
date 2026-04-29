@@ -6,5 +6,5 @@ psycopg2-binary==2.9.9
 motor==3.3.2
 bcrypt==4.1.2
 python-dotenv==1.0.0
-openpyxl==3.1.2
+openpyxl==3.1.2status
 python-multipart==0.0.19
