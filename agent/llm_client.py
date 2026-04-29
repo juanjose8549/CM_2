@@ -43,7 +43,7 @@ class LLMClient(ABC):
 class OpenAIClient(LLMClient):
     """OpenAI GPT-4 client with function calling support."""
 
-    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4"):
+    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o-mini"):
         try:
             from openai import AsyncOpenAI
         except ImportError:

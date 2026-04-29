@@ -25,7 +25,7 @@ class AgentOrchestrator:
         self.session_manager = SessionManager(use_mongo=False)  # Default: in-memory for dev
         self.llm_client = llm_client
         self.llm_config = llm_config or {
-            "model": "gpt-4",
+            "model": "gpt-4o-mini",
             "temperature": 0.7,
             "max_tokens": 2000
         }
