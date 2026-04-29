@@ -5,7 +5,9 @@ This is a FastAPI service for updating user accounts using PostgreSQL and MongoD
 ## Setup
 
 1. Install dependencies:
-   pip install -r requirements.txt
+   python3.11 -m venv .virtualenv
+   source .virtualenv/bin/activate
+   python -m pip install -r requirements.txt
 
 2. Set up databases:
    - PostgreSQL: Create a database and update DATABASE_URL in .env
