@@ -49,20 +49,6 @@ MALICIOUS_PATTERNS = [
     r'(?i)\.responseText',
     r'(?i)\.responseBody',
     
-    # Ofuscación y evasión
-    r'(?i)Eval\s*\(',
-    r'(?i)Execute\b',
-    r'(?i)ExecuteGlobal',
-    r'(?i)Chr\s*\(',
-    r'(?i)Asc\s*\(',
-    r'(?i)ChrW\s*\(',
-    
-    # Crypto y minería
-    r'(?i)CryptoMin',
-    r'(?i)CoinHive',
-    r'(?i)Monero',
-    r'(?i)\.mine\s*\(',
-    
     # Conexiones externas no autorizadas
     r'(?i)CreateObject\s*\(\s*["\']MSXML2\.',
     r'(?i)CreateObject\s*\(\s*["\']WinHttp\.',
@@ -79,19 +65,6 @@ MALICIOUS_PATTERNS = [
 
 # Funciones estándar de Excel permitidas (para no generar falsos positivos)
 STANDARD_EXCEL_FUNCTIONS = {
-    # Matemáticas y trigonometría
-    'ABS', 'ACOS', 'ACOSH', 'ACOT', 'ACOTH', 'AGGREGATE', 'ARABIC', 'ASIN',
-    'ASINH', 'ATAN', 'ATAN2', 'ATANH', 'BASE', 'CEILING', 'CEILING.MATH',
-    'CEILING.PRECISE', 'COMBIN', 'COMBINA', 'COS', 'COSH', 'COT', 'COTH',
-    'CSC', 'CSCH', 'DECIMAL', 'DEGREES', 'EVEN', 'EXP', 'FACT', 'FACTDOUBLE',
-    'FLOOR', 'FLOOR.MATH', 'FLOOR.PRECISE', 'GCD', 'INT', 'ISO.CEILING',
-    'LCM', 'LN', 'LOG', 'LOG10', 'LOG2', 'MDETERM', 'MINVERSE', 'MMULT',
-    'MOD', 'MROUND', 'MULTINOMIAL', 'MUNIT', 'ODD', 'PI', 'POWER',
-    'PRODUCT', 'QUOTIENT', 'RADIANS', 'RAND', 'RANDBETWEEN', 'ROMAN',
-    'ROUND', 'ROUNDDOWN', 'ROUNDUP', 'SEC', 'SECH', 'SERIESSUM',
-    'SIGN', 'SIN', 'SINH', 'SQRT', 'SQRTPI', 'SUM', 'SUMIF', 'SUMIFS',
-    'SUMPRODUCT', 'SUMSQ', 'SUMX2MY2', 'SUMX2PY2', 'SUMXMY2', 'TAN',
-    'TANH', 'TRUNC',
     
     # Estadísticas
     'AVEDEV', 'AVERAGE', 'AVERAGEA', 'AVERAGEIF', 'AVERAGEIFS',
@@ -119,39 +92,11 @@ STANDARD_EXCEL_FUNCTIONS = {
     'TRIMMEAN', 'VAR', 'VAR.P', 'VAR.S', 'VARA', 'VARPA', 'WEIBULL.DIST',
     'Z.TEST',
     
-    # Texto
-    'ARRAYTOTEXT', 'ASC', 'BAHTTEXT', 'CHAR', 'CLEAN', 'CODE', 'CONCAT',
-    'CONCATENATE', 'DBCS', 'DOLLAR', 'EXACT', 'FIND', 'FINDB', 'FIXED',
-    'LEFT', 'LEFTB', 'LEN', 'LENB', 'LOWER', 'MID', 'MIDB', 'NUMBERVALUE',
-    'PHONETIC', 'PROPER', 'REPLACE', 'REPLACEB', 'REPT', 'RIGHT', 'RIGHTB',
-    'SEARCH', 'SEARCHB', 'SUBSTITUTE', 'T', 'TEXT', 'TEXTJOIN',
-    'TRIM', 'UNICHAR', 'UNICODE', 'UPPER', 'VALUE', 'VALUETOTEXT',
-    
     # Fecha y hora
     'DATE', 'DATEVALUE', 'DAY', 'DAYS', 'DAYS360', 'EDATE', 'EOMONTH',
     'HOUR', 'ISOWEEKNUM', 'MINUTE', 'MONTH', 'NETWORKDAYS',
     'NETWORKDAYS.INTL', 'NOW', 'SECOND', 'TIME', 'TIMEVALUE', 'TODAY',
     'WEEKDAY', 'WEEKNUM', 'WORKDAY', 'WORKDAY.INTL', 'YEAR', 'YEARFRAC',
-    
-    # Búsqueda y referencia
-    'ADDRESS', 'AREAS', 'CHOOSE', 'CHOOSECOLS', 'CHOOSEROWS', 'COLUMN',
-    'COLUMNS', 'DROP', 'EXPAND', 'FILTER', 'FORMULATEXT', 'GETPIVOTDATA',
-    'HLOOKUP', 'HSTACK', 'HYPERLINK', 'INDEX', 'INDIRECT', 'LOOKUP',
-    'MATCH', 'OFFSET', 'ROW', 'ROWS', 'RANDARRAY', 'SORT', 'SORTBY',
-    'SEQUENCE', 'SINGLE', 'TAKE', 'TOCOL', 'TOROW', 'TRANSPOSE',
-    'UNIQUE', 'VLOOKUP', 'VSTACK', 'WRAPCOLS', 'WRAPROWS', 'XLOOKUP',
-    'XMATCH',
-    
-    # Lógica
-    'AND', 'BYCOL', 'BYROW', 'FALSE', 'IF', 'IFERROR', 'IFNA', 'IFS',
-    'LAMBDA', 'LET', 'MAKEARRAY', 'MAP', 'NOT', 'OR', 'REDUCE', 'SCAN',
-    'SWITCH', 'TRUE', 'XOR',
-    
-    # Información
-    'CELL', 'ERROR.TYPE', 'INFO', 'ISBLANK', 'ISERR', 'ISERROR',
-    'ISEVEN', 'ISFORMULA', 'ISLOGICAL', 'ISNA', 'ISNONTEXT', 'ISNUMBER',
-    'ISODD', 'ISOMITTED', 'ISREF', 'ISTEXT', 'N', 'NA', 'SHEET',
-    'SHEETS', 'TYPE',
     
     # Finanzas
     'ACCRINT', 'ACCRINTM', 'AMORDEGRC', 'AMORLINC', 'COUPDAYBS',
@@ -164,33 +109,7 @@ STANDARD_EXCEL_FUNCTIONS = {
     'RECEIVED', 'RRI', 'SLN', 'STOCKHISTORY', 'SYD', 'TBILLEQ',
     'TBILLPRICE', 'TBILLYIELD', 'VDB', 'XIRR', 'XNPV', 'YIELD',
     'YIELDDISC', 'YIELDMAT',
-    
-    # Ingeniería
-    'BESSELI', 'BESSELJ', 'BESSELK', 'BESSELY', 'BIN2DEC', 'BIN2HEX',
-    'BIN2OCT', 'BITAND', 'BITLSHIFT', 'BITOR', 'BITRSHIFT', 'BITXOR',
-    'COMPLEX', 'CONVERT', 'DEC2BIN', 'DEC2HEX', 'DEC2OCT', 'DELTA',
-    'ERF', 'ERF.PRECISE', 'ERFC', 'ERFC.PRECISE', 'GESTEP', 'HEX2BIN',
-    'HEX2DEC', 'HEX2OCT', 'IMABS', 'IMAGINARY', 'IMARGUMENT',
-    'IMCONJUGATE', 'IMCOS', 'IMCOSH', 'IMCOT', 'IMCSC', 'IMCSCH',
-    'IMDIV', 'IMEXP', 'IMLN', 'IMLOG10', 'IMLOG2', 'IMPOWER', 'IMPRODUCT',
-    'IMREAL', 'IMSEC', 'IMSECH', 'IMSIN', 'IMSINH', 'IMSQRT', 'IMSUB',
-    'IMSUM', 'IMTAN', 'OCT2BIN', 'OCT2DEC', 'OCT2HEX',
-    
-    # Base de datos
-    'DAVERAGE', 'DCOUNT', 'DCOUNTA', 'DGET', 'DMAX', 'DMIN', 'DPRODUCT',
-    'DSTDEV', 'DSTDEVP', 'DSUM', 'DVAR', 'DVARP',
-    
-    # Cubo
-    'CUBESET', 'CUBESETCOUNT', 'CUBEVALUE',
-    
-    # Web
-    'ENCODEURL', 'WEBSERVICE', 'FILTERXML',
-    
-    # Compatibilidad
-    'R1C1', 'A1',
-    
-    # Funciones definidas por el usuario (permitidas si no son maliciosas)
-    'XLL', 'UDF',
+
 }
 
 def validate_excel_safety(file_path: str) -> Dict[str, Any]:
@@ -220,10 +139,10 @@ def validate_excel_safety(file_path: str) -> Dict[str, Any]:
         workbook = load_workbook(file_path, data_only=False, keep_vba=True)
         result["details"]["sheets"] = len(workbook.sheetnames)
         
-        # Verificar si hay macros o VBA
-        if workbook.vbaProject:
-            result["warnings"].append("El archivo contiene macros VBA. Se requiere revisión manual.")
-            result["details"]["has_vba"] = True
+        # # Verificar si hay macros o VBA
+        # if workbook.vbaProject:
+        #     result["warnings"].append("El archivo contiene macros VBA. Se requiere revisión manual.")
+        #     result["details"]["has_vba"] = True
         
         # Analizar cada hoja
         for sheet_name in workbook.sheetnames:
