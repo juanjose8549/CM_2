@@ -1,71 +1,84 @@
 import re
 from openpyxl import load_workbook
-from typing import List, Dict, Any
+from typing import Dict, Any, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# Patrones de código malicioso (funciones estándar de Excel son permitidas)
+# Patrones de código malicioso compilados una sola vez (optimización)
 MALICIOUS_PATTERNS = [
-    # Macros y ejecución automática
-    r'(?i)Auto_?Open',
-    r'(?i)Auto_?Close',
-    r'(?i)Auto_?Activate',
-    r'(?i)Auto_?Deactivate',
-    r'(?i)Auto_?Exec',
-    r'(?i)Auto_?Run',
-    
-    # Ejecución de comandos del sistema
-    r'(?i)Shell\s*\(',
-    r'(?i)WScript\.Shell',
-    r'(?i)CreateObject\s*\(\s*["\']WScript\.Shell["\']',
-    r'(?i)CreateObject\s*\(\s*["\']Shell\.Application["\']',
-    r'(?i)Run\s*\(',
-    r'(?i)Exec\s*\(',
-    
-    # Acceso a sistema de archivos
-    r'(?i)CreateObject\s*\(\s*["\']Scripting\.FileSystemObject["\']',
-    r'(?i)FileSystemObject',
-    r'(?i)\.DeleteFile\s*\(',
-    r'(?i)\.DeleteFolder\s*\(',
-    r'(?i)\.CopyFile\s*\(',
-    r'(?i)\.MoveFile\s*\(',
-    r'(?i)\.WriteLine\s*\(',
-    r'(?i)\.Write\s*\(',
-    r'(?i)\.SaveToFile\s*\(',
-    r'(?i)\.OpenTextFile\s*\(',
-    
-    # Comandos del sistema operativo
-    r'(?i)cmd\s*\.',
-    r'(?i)PowerShell\s*\.',
-    r'(?i)MSHTA',
-    r'(?i)CertUtil',
-    r'(?i)BitsAdmin',
-    r'(?i)wmic\s+',
-    r'(?i)regsvr32\s+',
-    
-    # Descarga y ejecución remota
-    r'(?i)URLDownloadToFile',
-    r'(?i)WinHttp\.WinHttpRequest',
-    r'(?i)XMLHTTP',
-    r'(?i)\.send\s*\(',
-    r'(?i)\.responseText',
-    r'(?i)\.responseBody',
-    
-    # Conexiones externas no autorizadas
-    r'(?i)CreateObject\s*\(\s*["\']MSXML2\.',
-    r'(?i)CreateObject\s*\(\s*["\']WinHttp\.',
-    r'(?i)\.open\s*\(\s*["\']GET["\']',
-    r'(?i)\.open\s*\(\s*["\']POST["\']',
-    
-    # Funciones peligrosas de VBA
-    r'(?i)VBA\.Shell',
-    r'(?i)VBA\.CreateObject',
-    r'(?i)VBA\.CallByName',
-    r'(?i)\.FormulaHidden\s*=\s*True',
-    r'(?i)\.VeryHidden\s*=\s*True',
+    re.compile(r'(?i)Auto_?Open'),
+    re.compile(r'(?i)Auto_?Close'),
+    re.compile(r'(?i)Auto_?Activate'),
+    re.compile(r'(?i)Auto_?Deactivate'),
+    re.compile(r'(?i)Auto_?Exec'),
+    re.compile(r'(?i)Auto_?Run'),
+    re.compile(r'(?i)Shell\s*\('),
+    re.compile(r'(?i)WScript\.Shell'),
+    re.compile(r'(?i)CreateObject\s*\(\s*["\']WScript\.Shell["\']'),
+    re.compile(r'(?i)CreateObject\s*\(\s*["\']Shell\.Application["\']'),
+    re.compile(r'(?i)Run\s*\('),
+    re.compile(r'(?i)Exec\s*\('),
+    re.compile(r'(?i)CreateObject\s*\(\s*["\']Scripting\.FileSystemObject["\']'),
+    re.compile(r'(?i)FileSystemObject'),
+    re.compile(r'(?i)\.DeleteFile\s*\('),
+    re.compile(r'(?i)\.DeleteFolder\s*\('),
+    re.compile(r'(?i)\.CopyFile\s*\('),
+    re.compile(r'(?i)\.MoveFile\s*\('),
+    re.compile(r'(?i)\.WriteLine\s*\('),
+    re.compile(r'(?i)\.Write\s*\('),
+    re.compile(r'(?i)\.SaveToFile\s*\('),
+    re.compile(r'(?i)\.OpenTextFile\s*\('),
+    re.compile(r'(?i)cmd\s*\.'),
+    re.compile(r'(?i)PowerShell\s*\.'),
+    re.compile(r'(?i)MSHTA'),
+    re.compile(r'(?i)CertUtil'),
+    re.compile(r'(?i)BitsAdmin'),
+    re.compile(r'(?i)wmic\s+'),
+    re.compile(r'(?i)regsvr32\s+'),
+    re.compile(r'(?i)URLDownloadToFile'),
+    re.compile(r'(?i)WinHttp\.WinHttpRequest'),
+    re.compile(r'(?i)XMLHTTP'),
+    re.compile(r'(?i)\.send\s*\('),
+    re.compile(r'(?i)\.responseText'),
+    re.compile(r'(?i)\.responseBody'),
+    re.compile(r'(?i)Eval\s*\('),
+    re.compile(r'(?i)Execute\b'),
+    re.compile(r'(?i)ExecuteGlobal'),
+    re.compile(r'(?i)Chr\s*\('),
+    re.compile(r'(?i)Asc\s*\('),
+    re.compile(r'(?i)ChrW\s*\('),
+    re.compile(r'(?i)CryptoMin'),
+    re.compile(r'(?i)CoinHive'),
+    re.compile(r'(?i)Monero'),
+    re.compile(r'(?i)\.mine\s*\('),
+    re.compile(r'(?i)CreateObject\s*\(\s*["\']MSXML2\.'),
+    re.compile(r'(?i)CreateObject\s*\(\s*["\']WinHttp\.'),
+    re.compile(r'(?i)\.open\s*\(\s*["\']GET["\']'),
+    re.compile(r'(?i)\.open\s*\(\s*["\']POST["\']'),
+    re.compile(r'(?i)VBA\.Shell'),
+    re.compile(r'(?i)VBA\.CreateObject'),
+    re.compile(r'(?i)VBA\.CallByName'),
+    re.compile(r'(?i)\.FormulaHidden\s*=\s*True'),
+    re.compile(r'(?i)\.VeryHidden\s*=\s*True'),
 ]
 
-# Funciones estándar de Excel permitidas (para no generar falsos positivos)
+# Patrón para referencias externas a ejecutables (compilado)
+EXTERNAL_EXEC_PATTERN = re.compile(r'(?i)(?:\[.*?\]|\'.*?\'!)(?:.*\.(?:exe|bat|cmd|ps1|vbs|js|jar))')
+
+# Funciones estándar de Excel (optimizado como set de strings en mayúsculas)
 STANDARD_EXCEL_FUNCTIONS = {
-    
+    # Matemáticas y trigonometría
+    'ABS', 'ACOS', 'ACOSH', 'ACOT', 'ACOTH', 'AGGREGATE', 'ARABIC', 'ASIN',
+    'ASINH', 'ATAN', 'ATAN2', 'ATANH', 'BASE', 'CEILING', 'CEILING.MATH',
+    'CEILING.PRECISE', 'COMBIN', 'COMBINA', 'COS', 'COSH', 'COT', 'COTH',
+    'CSC', 'CSCH', 'DECIMAL', 'DEGREES', 'EVEN', 'EXP', 'FACT', 'FACTDOUBLE',
+    'FLOOR', 'FLOOR.MATH', 'FLOOR.PRECISE', 'GCD', 'INT', 'ISO.CEILING',
+    'LCM', 'LN', 'LOG', 'LOG10', 'LOG2', 'MDETERM', 'MINVERSE', 'MMULT',
+    'MOD', 'MROUND', 'MULTINOMIAL', 'MUNIT', 'ODD', 'PI', 'POWER',
+    'PRODUCT', 'QUOTIENT', 'RADIANS', 'RAND', 'RANDBETWEEN', 'ROMAN',
+    'ROUND', 'ROUNDDOWN', 'ROUNDUP', 'SEC', 'SECH', 'SERIESSUM',
+    'SIGN', 'SIN', 'SINH', 'SQRT', 'SQRTPI', 'SUM', 'SUMIF', 'SUMIFS',
+    'SUMPRODUCT', 'SUMSQ', 'SUMX2MY2', 'SUMX2PY2', 'SUMXMY2', 'TAN',
+    'TANH', 'TRUNC',
     # Estadísticas
     'AVEDEV', 'AVERAGE', 'AVERAGEA', 'AVERAGEIF', 'AVERAGEIFS',
     'BETA.DIST', 'BETA.INV', 'BINOM.DIST', 'BINOM.DIST.RANGE',
@@ -91,13 +104,35 @@ STANDARD_EXCEL_FUNCTIONS = {
     'T.DIST.2T', 'T.DIST.RT', 'T.INV', 'T.INV.2T', 'T.TEST', 'TREND',
     'TRIMMEAN', 'VAR', 'VAR.P', 'VAR.S', 'VARA', 'VARPA', 'WEIBULL.DIST',
     'Z.TEST',
-    
+    # Texto
+    'ARRAYTOTEXT', 'ASC', 'BAHTTEXT', 'CHAR', 'CLEAN', 'CODE', 'CONCAT',
+    'CONCATENATE', 'DBCS', 'DOLLAR', 'EXACT', 'FIND', 'FINDB', 'FIXED',
+    'LEFT', 'LEFTB', 'LEN', 'LENB', 'LOWER', 'MID', 'MIDB', 'NUMBERVALUE',
+    'PHONETIC', 'PROPER', 'REPLACE', 'REPLACEB', 'REPT', 'RIGHT', 'RIGHTB',
+    'SEARCH', 'SEARCHB', 'SUBSTITUTE', 'T', 'TEXT', 'TEXTJOIN',
+    'TRIM', 'UNICHAR', 'UNICODE', 'UPPER', 'VALUE', 'VALUETOTEXT',
     # Fecha y hora
     'DATE', 'DATEVALUE', 'DAY', 'DAYS', 'DAYS360', 'EDATE', 'EOMONTH',
     'HOUR', 'ISOWEEKNUM', 'MINUTE', 'MONTH', 'NETWORKDAYS',
     'NETWORKDAYS.INTL', 'NOW', 'SECOND', 'TIME', 'TIMEVALUE', 'TODAY',
     'WEEKDAY', 'WEEKNUM', 'WORKDAY', 'WORKDAY.INTL', 'YEAR', 'YEARFRAC',
-    
+    # Búsqueda y referencia
+    'ADDRESS', 'AREAS', 'CHOOSE', 'CHOOSECOLS', 'CHOOSEROWS', 'COLUMN',
+    'COLUMNS', 'DROP', 'EXPAND', 'FILTER', 'FORMULATEXT', 'GETPIVOTDATA',
+    'HLOOKUP', 'HSTACK', 'HYPERLINK', 'INDEX', 'INDIRECT', 'LOOKUP',
+    'MATCH', 'OFFSET', 'ROW', 'ROWS', 'RANDARRAY', 'SORT', 'SORTBY',
+    'SEQUENCE', 'SINGLE', 'TAKE', 'TOCOL', 'TOROW', 'TRANSPOSE',
+    'UNIQUE', 'VLOOKUP', 'VSTACK', 'WRAPCOLS', 'WRAPROWS', 'XLOOKUP',
+    'XMATCH',
+    # Lógica
+    'AND', 'BYCOL', 'BYROW', 'FALSE', 'IF', 'IFERROR', 'IFNA', 'IFS',
+    'LAMBDA', 'LET', 'MAKEARRAY', 'MAP', 'NOT', 'OR', 'REDUCE', 'SCAN',
+    'SWITCH', 'TRUE', 'XOR',
+    # Información
+    'CELL', 'ERROR.TYPE', 'INFO', 'ISBLANK', 'ISERR', 'ISERROR',
+    'ISEVEN', 'ISFORMULA', 'ISLOGICAL', 'ISNA', 'ISNONTEXT', 'ISNUMBER',
+    'ISODD', 'ISOMITTED', 'ISREF', 'ISTEXT', 'N', 'NA', 'SHEET',
+    'SHEETS', 'TYPE',
     # Finanzas
     'ACCRINT', 'ACCRINTM', 'AMORDEGRC', 'AMORLINC', 'COUPDAYBS',
     'COUPDAYS', 'COUPDAYSNC', 'COUPNCD', 'COUPNUM', 'COUPPCD',
@@ -109,12 +144,123 @@ STANDARD_EXCEL_FUNCTIONS = {
     'RECEIVED', 'RRI', 'SLN', 'STOCKHISTORY', 'SYD', 'TBILLEQ',
     'TBILLPRICE', 'TBILLYIELD', 'VDB', 'XIRR', 'XNPV', 'YIELD',
     'YIELDDISC', 'YIELDMAT',
-
+    # Ingeniería
+    'BESSELI', 'BESSELJ', 'BESSELK', 'BESSELY', 'BIN2DEC', 'BIN2HEX',
+    'BIN2OCT', 'BITAND', 'BITLSHIFT', 'BITOR', 'BITRSHIFT', 'BITXOR',
+    'COMPLEX', 'CONVERT', 'DEC2BIN', 'DEC2HEX', 'DEC2OCT', 'DELTA',
+    'ERF', 'ERF.PRECISE', 'ERFC', 'ERFC.PRECISE', 'GESTEP', 'HEX2BIN',
+    'HEX2DEC', 'HEX2OCT', 'IMABS', 'IMAGINARY', 'IMARGUMENT',
+    'IMCONJUGATE', 'IMCOS', 'IMCOSH', 'IMCOT', 'IMCSC', 'IMCSCH',
+    'IMDIV', 'IMEXP', 'IMLN', 'IMLOG10', 'IMLOG2', 'IMPOWER', 'IMPRODUCT',
+    'IMREAL', 'IMSEC', 'IMSECH', 'IMSIN', 'IMSINH', 'IMSQRT', 'IMSUB',
+    'IMSUM', 'IMTAN', 'OCT2BIN', 'OCT2DEC', 'OCT2HEX',
+    # Base de datos
+    'DAVERAGE', 'DCOUNT', 'DCOUNTA', 'DGET', 'DMAX', 'DMIN', 'DPRODUCT',
+    'DSTDEV', 'DSTDEVP', 'DSUM', 'DVAR', 'DVARP',
+    # Cubo
+    'CUBESET', 'CUBESETCOUNT', 'CUBEVALUE',
+    # Web
+    'ENCODEURL', 'WEBSERVICE', 'FILTERXML',
+    # Compatibilidad
+    'R1C1', 'A1',
+    'XLL', 'UDF',
 }
+
+# Palabras sospechosas para contenido de celdas (compilado como set)
+SUSPICIOUS_WORDS = {
+    'auto_open', 'auto_close', 'auto_activate',
+    'shell', 'exec', 'run', 'cmd', 'powershell',
+    'wscript', 'createobject', 'filesystemobject',
+}
+
+
+def _analyze_formula(formula: str, sheet_name: str, cell_coordinate: str) -> Optional[Dict]:
+    """
+    Analiza una fórmula en busca de patrones maliciosos.
+    Retorna dict con info de la amenaza o None si es segura.
+    """
+    formula_upper = formula.upper()
+    
+    # Verificar si contiene funciones estándar de Excel (rápido)
+    # Dividir en tokens por paréntesis, espacios, operadores
+    formula_upper = formula.replace('=', '', 1) if formula.startswith('=') else formula
+    # Extraer posibles nombres de funciones
+    tokens = set(formula_upper.replace('(', ' ').replace(')', ' ').replace(',', ' ').replace(';', ' ').split())
+    
+    # Buscar patrones maliciosos
+    for compiled_pattern in MALICIOUS_PATTERNS:
+        match = compiled_pattern.search(formula)
+        if match:
+            # Verificar que no sea una función estándar
+            is_standard = bool(tokens & STANDARD_EXCEL_FUNCTIONS)
+            if not is_standard:
+                return {
+                    "sheet": sheet_name,
+                    "cell": cell_coordinate,
+                    "pattern_matched": compiled_pattern.pattern,
+                    "formula": formula[:200],
+                }
+    
+    return None
+
+
+def _analyze_sheet(sheet_ws, sheet_name: str) -> Dict:
+    """
+    Analiza una hoja de Excel de forma rápida.
+    Retorna dict con resultados del análisis de la hoja.
+    """
+    sheet_result = {
+        "cells_analyzed": 0,
+        "formulas_found": 0,
+        "malicious_patterns_found": [],
+        "unusual_cells": [],
+        "errors": [],
+    }
+    
+    for row in sheet_ws.iter_rows():
+        for cell in row:
+            sheet_result["cells_analyzed"] += 1
+            cell_value = cell.value
+            
+            if cell_value is None:
+                continue
+            
+            # Analizar celdas con fórmula (comienza con '=')
+            if isinstance(cell_value, str):
+                if cell_value.startswith('='):
+                    sheet_result["formulas_found"] += 1
+                    threat = _analyze_formula(cell_value, sheet_name, cell.coordinate)
+                    if threat:
+                        sheet_result["malicious_patterns_found"].append(threat)
+                        sheet_result["errors"].append(
+                            f"Celda {cell.coordinate} en hoja '{sheet_name}': "
+                            f"posible código malicioso detectado"
+                        )
+                
+                # Verificar palabras sospechosas en celdas de texto
+                cell_lower = cell_value.lower()
+                for word in SUSPICIOUS_WORDS:
+                    if word in cell_lower:
+                        sheet_result["unusual_cells"].append({
+                            "sheet": sheet_name,
+                            "cell": cell.coordinate,
+                            "suspicious_content": word,
+                        })
+                
+                # Verificar referencias externas a ejecutables
+                if EXTERNAL_EXEC_PATTERN.search(cell_value):
+                    sheet_result["errors"].append(
+                        f"Celda {cell.coordinate} en hoja '{sheet_name}': "
+                        f"referencia externa a archivo ejecutable detectada"
+                    )
+    
+    return sheet_result
+
 
 def validate_excel_safety(file_path: str) -> Dict[str, Any]:
     """
     Valida que un archivo Excel no contenga código malicioso.
+    Optimizado para archivos grandes usando análisis por lotes.
     
     Args:
         file_path: Ruta al archivo Excel
@@ -136,81 +282,40 @@ def validate_excel_safety(file_path: str) -> Dict[str, Any]:
     }
     
     try:
-        workbook = load_workbook(file_path, data_only=False, keep_vba=True)
+        workbook = load_workbook(file_path, data_only=False, keep_vba=True, read_only=True)
         result["details"]["sheets"] = len(workbook.sheetnames)
         
-        # # Verificar si hay macros o VBA
-        # if workbook.vbaProject:
-        #     result["warnings"].append("El archivo contiene macros VBA. Se requiere revisión manual.")
-        #     result["details"]["has_vba"] = True
+        # Verificar VBA (optimizado)
+        try:
+            vba_project = (
+                getattr(workbook, 'vbaProject', None) or 
+                getattr(workbook, 'vba_project', None)
+            )
+            if vba_project is not None:
+                result["warnings"].append(
+                    "El archivo contiene macros VBA. Se requiere revisión manual."
+                )
+                result["details"]["has_vba"] = True
+        except Exception:
+            pass
         
         # Analizar cada hoja
         for sheet_name in workbook.sheetnames:
             worksheet = workbook[sheet_name]
+            sheet_result = _analyze_sheet(worksheet, sheet_name)
             
-            for row in worksheet.iter_rows():
-                for cell in row:
-                    result["details"]["cells_analyzed"] += 1
-                    
-                    # Analizar fórmulas
-                    if cell.value and isinstance(cell.value, str) and cell.value.startswith('='):
-                        result["details"]["formulas_found"] += 1
-                        formula = cell.value[1:]  # Quitar el '='
-                        
-                        # Verificar patrones maliciosos
-                        for pattern in MALICIOUS_PATTERNS:
-                            if re.search(pattern, formula):
-                                # Verificar que no sea una función estándar de Excel
-                                is_standard = False
-                                for func in STANDARD_EXCEL_FUNCTIONS:
-                                    if func in formula.upper():
-                                        is_standard = True
-                                        break
-                                
-                                if not is_standard:
-                                    result["safe"] = False
-                                    malicious_info = {
-                                        "sheet": sheet_name,
-                                        "cell": cell.coordinate,
-                                        "pattern_matched": pattern,
-                                        "formula": formula[:200],  # Truncar fórmulas largas
-                                    }
-                                    result["details"]["malicious_patterns_found"].append(malicious_info)
-                                    result["errors"].append(
-                                        f"Celda {cell.coordinate} en hoja '{sheet_name}': "
-                                        f"posible código malicioso detectado"
-                                    )
-                    
-                    # Verificar nombres de rango ocultos o sospechosos
-                    if cell.value and isinstance(cell.value, str):
-                        suspicious_names = [
-                            'auto_open', 'auto_close', 'auto_activate',
-                            'shell', 'exec', 'run', 'cmd', 'powershell',
-                            'wscript', 'createobject', 'filesystemobject',
-                        ]
-                        cell_lower = cell.value.lower()
-                        for suspicious in suspicious_names:
-                            if suspicious in cell_lower:
-                                result["details"]["unusual_cells"].append({
-                                    "sheet": sheet_name,
-                                    "cell": cell.coordinate,
-                                    "suspicious_content": suspicious,
-                                })
-        
-        # Verificar relaciones externas (DDE, OLE)
-        for sheet_name in workbook.sheetnames:
-            worksheet = workbook[sheet_name]
-            for row in worksheet.iter_rows():
-                for cell in row:
-                    if cell.value and isinstance(cell.value, str):
-                        # Detectar referencias externas peligrosas
-                        if re.search(r'(?i)\[.*\]|\'.*\'!', cell.value):
-                            if any(ext in cell.value.lower() for ext in ['.exe', '.bat', '.cmd', '.ps1', '.vbs', '.js', '.jar']):
-                                result["safe"] = False
-                                result["errors"].append(
-                                    f"Celda {cell.coordinate} en hoja '{sheet_name}': "
-                                    f"referencia externa a archivo ejecutable detectada"
-                                )
+            # Acumular resultados
+            result["details"]["cells_analyzed"] += sheet_result["cells_analyzed"]
+            result["details"]["formulas_found"] += sheet_result["formulas_found"]
+            result["details"]["malicious_patterns_found"].extend(
+                sheet_result["malicious_patterns_found"]
+            )
+            result["details"]["unusual_cells"].extend(sheet_result["unusual_cells"])
+            
+            if sheet_result["malicious_patterns_found"]:
+                result["safe"] = False
+            
+            result["errors"].extend(sheet_result["errors"])
         
         workbook.close()
         
@@ -224,6 +329,7 @@ def validate_excel_safety(file_path: str) -> Dict[str, Any]:
 def get_safe_excel_content(file_path: str) -> Dict[str, Any]:
     """
     Lee el contenido seguro de un archivo Excel (solo valores, sin fórmulas).
+    Optimizado para archivos grandes usando read_only mode.
     
     Args:
         file_path: Ruta al archivo Excel
@@ -239,26 +345,25 @@ def get_safe_excel_content(file_path: str) -> Dict[str, Any]:
     }
     
     try:
-        workbook = load_workbook(file_path, data_only=True)  # data_only=True para obtener valores
+        # Usar read_only=True y data_only=True para máxima eficiencia
+        workbook = load_workbook(file_path, data_only=True, read_only=True)
+        max_columns = 0
+        total_rows = 0
         
         for sheet_name in workbook.sheetnames:
             worksheet = workbook[sheet_name]
             sheet_data = []
             
             for row in worksheet.iter_rows(values_only=True):
-                cleaned_row = []
-                for cell_value in row:
-                    if cell_value is None:
-                        cleaned_row.append("")
-                    elif isinstance(cell_value, (str, int, float, bool)):
-                        cleaned_row.append(str(cell_value))
-                    else:
-                        cleaned_row.append(str(cell_value))
+                cleaned_row = ["" if cell_value is None else str(cell_value) for cell_value in row]
                 sheet_data.append(cleaned_row)
+                max_columns = max(max_columns, len(cleaned_row))
+                total_rows += 1
             
             content["sheets"][sheet_name] = sheet_data
-            content["metadata"]["columns"] = max(len(row) for row in sheet_data) if sheet_data else 0
-            content["metadata"]["rows"] = len(sheet_data)
+        
+        content["metadata"]["columns"] = max_columns
+        content["metadata"]["rows"] = total_rows
         
         workbook.close()
         
