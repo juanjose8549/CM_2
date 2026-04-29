@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 
 from agent.orchestrator import AgentOrchestrator
+from agent.llm_client import create_llm_client
 
 load_dotenv()
 
@@ -23,6 +24,9 @@ load_dotenv()
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "*")
 ALLOW_ORIGIN = os.getenv("ALLOW_ORIGIN", "*")
 ALLOW_METHODS = os.getenv("ALLOW_METHODS", "*")
+
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "")  # "openai" or "anthropic"
+LLM_MODEL = os.getenv("LLM_MODEL", "")
 
 app = FastAPI(
     title="AI Agent Service",
@@ -42,11 +46,26 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Agent Initialization
 # ---------------------------------------------------------------------------
-agent = AgentOrchestrator()
+llm_client = None
+if LLM_PROVIDER:
+    try:
+        model_kwargs = {}
+        if LLM_MODEL:
+            model_kwargs["model"] = LLM_MODEL
+        llm_client = create_llm_client(LLM_PROVIDER, **model_kwargs)
+        print(f"  ✅ LLM client initialized: {LLM_PROVIDER}/{llm_client.model_name}")
+    except Exception as e:
+        print(f"  ⚠️ Failed to initialize LLM client: {e}")
+        print("  ➡️ Falling back to deterministic mode")
+
+agent = AgentOrchestrator(llm_client=llm_client)
 
 print("\n" + "="*60)
 print("  🤖 AI AGENT SERVICE")
 print("="*60)
+mode = "LLM mode" if llm_client else "Deterministic mode (fallback)"
+print(f"  Mode: {mode}")
+print(f"  LLM Provider: {LLM_PROVIDER or 'None (deterministic)'}")
 print("\n📋 Skills registrados:")
 for name, skill in agent.skills.items():
     file_req = "📎" if skill.requires_file_upload else ""

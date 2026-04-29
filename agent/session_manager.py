@@ -64,7 +64,8 @@ class SessionManager:
         session_id: str,
         tool_name: str,
         params: Dict[str, Any],
-        result: Dict[str, Any]
+        result: Dict[str, Any],
+        tool_call_id: str = ""
     ) -> Message:
         """Add a tool call record to the conversation."""
         message = Message(
@@ -72,7 +73,9 @@ class SessionManager:
             content=f"Tool '{tool_name}' executed",
             metadata={
                 "tool": tool_name,
+                "tool_call_id": tool_call_id,
                 "params": params,
+                "result_data": result,
                 "result_success": result.get("success", False)
             }
         )

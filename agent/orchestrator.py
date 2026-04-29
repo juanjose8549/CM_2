@@ -120,23 +120,22 @@ class AgentOrchestrator:
         ]
         
         for msg in session.messages[-20:]:
-            role_map = {
-                "user": "user",
-                "assistant": "assistant",
-                "tool_call": "function",
-                "system": "system"
-            }
-            role = role_map.get(msg.role, "user")
-            content = msg.content
-            
             if msg.role == "tool_call":
+                # Tool call results from memory
                 conversation_messages.append({
-                    "role": "function",
+                    "role": "tool",
+                    "tool_call_id": msg.metadata.get("tool_call_id", ""),
                     "name": msg.metadata.get("tool", "unknown"),
-                    "content": json.dumps(msg.metadata.get("result_success", {}))
+                    "content": json.dumps(msg.metadata.get("result_data", {}), ensure_ascii=False)
                 })
             else:
-                conversation_messages.append({"role": role, "content": content})
+                role_map = {
+                    "user": "user",
+                    "assistant": "assistant",
+                    "system": "system"
+                }
+                role = role_map.get(msg.role, "user")
+                conversation_messages.append({"role": role, "content": msg.content})
 
         conversation_messages.append({"role": "user", "content": message})
 
@@ -171,14 +170,89 @@ class AgentOrchestrator:
             "tool_executed": response.get("tool_executed")
         }
 
-    async def _call_llm(self, messages: List[Dict]) -> Dict[str, Any]:
+    async def _call_llm(self, messages: List[Dict], max_iterations: int = 5) -> Dict[str, Any]:
         """
-        Call the LLM with function calling support.
-        Placeholder for OpenAI/Anthropic integration.
+        Call the LLM with full function calling support.
+        
+        The agent can make multiple tool calls in a row if needed
+        (e.g., validate Excel, then explain results).
+        
+        Args:
+            messages: Conversation messages including system prompt
+            max_iterations: Max number of LLM-tool-LLM cycles
+        
+        Returns:
+            Dict with final response
         """
-        return await self._deterministic_response(
-            messages[-1]["content"] if messages else "", None, ""
-        )
+        tools = self.get_tools_for_llm()
+
+        for iteration in range(max_iterations):
+            # Call LLM
+            llm_response = await self.llm_client.chat_completion(
+                messages=messages,
+                tools=tools if tools else None,
+                temperature=self.llm_config.get("temperature", 0.7),
+                max_tokens=self.llm_config.get("max_tokens", 2000)
+            )
+
+            # Store assistant message
+            messages.append({
+                "role": "assistant",
+                "content": llm_response.get("content", "")
+            })
+
+            # Check if LLM wants to call tools
+            tool_calls = llm_response.get("tool_calls", [])
+            
+            if not tool_calls:
+                # No tool calls - this is the final response
+                return {
+                    "response": llm_response.get("content", ""),
+                    "finished": True
+                }
+
+            # Process tool calls
+            for tool_call in tool_calls:
+                func_name = tool_call["function"]["name"]
+                func_args = tool_call["function"]["arguments"]
+
+                # Find and execute the skill
+                skill = self.skills.get(func_name)
+                if not skill:
+                    result = {
+                        "success": False,
+                        "error": f"Unknown skill: {func_name}"
+                    }
+                else:
+                    # Check if skill requires confirmation for destructive actions
+                    if skill.is_destructive:
+                        # For now, auto-confirm with LLM context.
+                        # In production, you'd want user confirmation here.
+                        pass
+                    
+                    # Check if skill requires a file
+                    if skill.requires_file_upload:
+                        # The file should have been passed in context
+                        pass
+
+                    result = await skill.execute(func_args, {
+                        "session_id": messages[0].get("content", ""),
+                        "user_id": messages[0].get("user_id", 0)
+                    })
+
+                # Add function result to conversation
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.get("id", ""),
+                    "name": func_name,
+                    "content": json.dumps(result, ensure_ascii=False)
+                })
+
+        # If we exceeded max iterations, return last assistant response
+        return {
+            "response": "Lo siento, tomó demasiados pasos procesar tu solicitud. ¿Puedes ser más específico?",
+            "finished": True
+        }
 
     async def _deterministic_response(
         self,
