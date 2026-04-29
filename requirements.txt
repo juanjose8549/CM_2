@@ -11,5 +11,5 @@ python-multipart==0.0.19
 aiofiles==23.2.1
 httpx==0.27.0
 # LLM Providers (optional - uncomment based on your needs)
-# openai>=1.0.0
+openai>=1.0.0
 # anthropic>=0.30.0

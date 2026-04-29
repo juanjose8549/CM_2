@@ -8,7 +8,7 @@ import tempfile
 import uuid
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Header, File, UploadFile, Form
+from fastapi import FastAPI, HTTPException, Header, File, UploadFile, Form, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
@@ -238,3 +238,93 @@ async def list_sessions(
         })
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error listing sessions: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# WebSocket Chat (Real-time Streaming)
+# ---------------------------------------------------------------------------
+@app.websocket("/chat/{session_id}/ws")
+async def websocket_chat(websocket: WebSocket, session_id: str):
+    """
+    WebSocket endpoint for real-time chat with the agent.
+    
+    Connect to:
+    ws://host:8000/chat/{session_id}/ws
+    
+    Send messages as JSON:
+    {"message": "Hola", "user_id": 1}
+    
+    Receive streaming responses as JSON:
+    {"type": "text", "content": "¡Hola!..."}
+    {"type": "tool_call", "skill": "list_users", "status": "executing"}
+    {"type": "done"}
+    """
+    await websocket.accept()
+    
+    # Store session info
+    user_id = None
+    
+    try:
+        while True:
+            # Receive message
+            data = await websocket.receive_json()
+            message = data.get("message", "")
+            user_id = data.get("user_id", user_id)
+            
+            if not message:
+                continue
+            
+            if not user_id:
+                await websocket.send_json({
+                    "type": "error",
+                    "content": "Se requiere X-User-ID para usar el chat"
+                })
+                continue
+            
+            # Process the message
+            result = await agent.process_message(
+                session_id=session_id,
+                user_id=user_id,
+                message=message
+            )
+            
+            # Send the response
+            response_text = result.get("response", "")
+            tool_executed = result.get("tool_executed")
+            
+            # Stream chunks of text
+            chunk_size = 50
+            for i in range(0, len(response_text), chunk_size):
+                chunk = response_text[i:i + chunk_size]
+                await websocket.send_json({
+                    "type": "text",
+                    "content": chunk,
+                    "done": (i + chunk_size >= len(response_text))
+                })
+            
+            # If a tool was executed, notify
+            if tool_executed:
+                await websocket.send_json({
+                    "type": "tool_call",
+                    "skill": tool_executed,
+                    "status": "completed"
+                })
+            
+            # Signal completion
+            await websocket.send_json({
+                "type": "done",
+                "session_id": session_id,
+                "requires_file": result.get("requires_file", False),
+                "finished": result.get("finished", True)
+            })
+            
+    except WebSocketDisconnect:
+        print(f"WebSocket disconnected: session={session_id}, user={user_id}")
+    except Exception as e:
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "content": f"Error: {str(e)}"
+            })
+        except:
+            pass
