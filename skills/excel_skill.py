@@ -3,10 +3,7 @@ Excel validation and reading skills for the AI Agent.
 Wraps the existing excel_validator module as agent skills.
 """
 from typing import Dict, Any, Optional
-import tempfile
 import os
-
-import aiofiles
 
 from skills.base import Skill
 from excel_validator import validate_excel_safety, get_safe_excel_content
