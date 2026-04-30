@@ -43,7 +43,7 @@ class LLMClient(ABC):
 class OpenAIClient(LLMClient):
     """OpenAI GPT-4 client with function calling support."""
 
-    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o-mini"):
+    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o-mini", base_url: Optional[str] = None):
         try:
             from openai import AsyncOpenAI
         except ImportError:
@@ -57,7 +57,11 @@ class OpenAIClient(LLMClient):
                 "OPENAI_API_KEY not found. Set it in .env or pass it to the constructor."
             )
         
-        self.client = AsyncOpenAI(api_key=self.api_key)
+        client_kwargs = {"api_key": self.api_key}
+        if base_url:
+            client_kwargs["base_url"] = base_url
+        
+        self.client = AsyncOpenAI(**client_kwargs)
         self._model = model
 
     @property
@@ -259,7 +263,7 @@ def create_llm_client(provider: str = "openai", **kwargs) -> LLMClient:
     Factory function to create an LLM client.
     
     Args:
-        provider: 'openai' or 'anthropic'
+        provider: 'openai', 'anthropic', or 'deepseek'
         **kwargs: Additional args passed to the client constructor
     
     Returns:
@@ -273,10 +277,22 @@ def create_llm_client(provider: str = "openai", **kwargs) -> LLMClient:
         "anthropic": AnthropicClient,
     }
     
-    if provider.lower() not in providers:
+    provider_lower = provider.lower()
+    
+    # DeepSeek uses OpenAI-compatible API, just needs different base_url
+    if provider_lower == "deepseek":
+        kwargs.setdefault("base_url", "https://api.deepseek.com")
+        kwargs.setdefault("model", "deepseek-chat")
+        # DeepSeek API key should be in DEEPSEEK_API_KEY or OPENAI_API_KEY
+        key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY")
+        if key:
+            kwargs["api_key"] = key
+        return OpenAIClient(**kwargs)
+    
+    if provider_lower not in providers:
         raise ValueError(
             f"Unknown provider: {provider}. "
-            f"Available: {', '.join(providers.keys())}"
+            f"Available: openai, anthropic, deepseek"
         )
     
-    return providers[provider.lower()](**kwargs)
+    return providers[provider_lower](**kwargs)

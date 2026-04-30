@@ -25,7 +25,7 @@ ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS", "*")
 ALLOW_ORIGIN = os.getenv("ALLOW_ORIGIN", "*")
 ALLOW_METHODS = os.getenv("ALLOW_METHODS", "*")
 
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "")  # "openai" or "anthropic"
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "")  # "openai", "anthropic", or "deepseek"
 LLM_MODEL = os.getenv("LLM_MODEL", "")
 
 app = FastAPI(

@@ -27,7 +27,7 @@ class AgentOrchestrator:
         self.llm_config = llm_config or {
             "model": "gpt-4o-mini",
             "temperature": 0.7,
-            "max_tokens": 2000
+            "max_tokens": 4000
         }
         self._register_default_skills()
 
