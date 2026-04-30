@@ -22,7 +22,7 @@ class AgentOrchestrator:
 
     def __init__(self, llm_client=None, llm_config: Optional[Dict] = None):
         self.skills: Dict[str, Skill] = {}
-        self.session_manager = SessionManager(use_mongo=False)  # Default: in-memory for dev
+        self.session_manager = SessionManager(use_mongo=True)  # Usa MongoDB para persistencia
         self.llm_client = llm_client
         self.llm_config = llm_config or {
             "model": "gpt-4o-mini",
@@ -195,14 +195,26 @@ class AgentOrchestrator:
                 max_tokens=self.llm_config.get("max_tokens", 2000)
             )
 
-            # Store assistant message
-            messages.append({
-                "role": "assistant",
-                "content": llm_response.get("content", "")
-            })
-
-            # Check if LLM wants to call tools
             tool_calls = llm_response.get("tool_calls", [])
+            
+            # Store assistant message (include tool_calls if any)
+            assistant_msg = {
+                "role": "assistant",
+                "content": llm_response.get("content", "") or None
+            }
+            if tool_calls:
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc["function"]["name"],
+                            "arguments": json.dumps(tc["function"]["arguments"], ensure_ascii=False) if isinstance(tc["function"]["arguments"], dict) else tc["function"]["arguments"]
+                        }
+                    }
+                    for tc in tool_calls
+                ]
+            messages.append(assistant_msg)
             
             if not tool_calls:
                 # No tool calls - this is the final response
