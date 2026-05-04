@@ -6,6 +6,7 @@ from database import Base
 
 
 class User(Base):
+    """Modelo SQLAlchemy para la tabla 'users'."""
     __tablename__ = 'users'
 
     id = Column(Integer, primary_key=True, index=True)
@@ -16,13 +17,19 @@ class User(Base):
     updated_by = Column(Integer, nullable=True)
     updated_at = Column(DateTime, nullable=True)
 
+
+# ─── Esquemas Pydantic (válidos para request/response) ───
+
 class UserUpdate(BaseModel):
+    """Esquema para la actualización parcial de un usuario."""
     name: Optional[str] = None
     surname: Optional[str] = None
     password: Optional[str] = None
     is_active: Optional[bool] = None
 
+
 class UserResponse(BaseModel):
+    """Esquema para la respuesta con datos del usuario."""
     id: int
     name: str
     surname: str
