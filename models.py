@@ -36,3 +36,10 @@ class UserResponse(BaseModel):
     is_active: bool
     updated_by: Optional[int]
     updated_at: Optional[datetime]
+
+
+# ─── Esquemas para el agente AI ───
+
+class ConsultaAgente(BaseModel):
+    """Esquema para consultas en lenguaje natural al agente."""
+    mensaje: str

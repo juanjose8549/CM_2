@@ -14,11 +14,18 @@ from datetime import datetime
 from database import get_db, audit_collection, engine, Base
 from excel_validator import validate_excel_safety, get_safe_excel_content
 
+# ─── Importaciones del agente AI ───
+from agent.agente import crear_agente, ejecutar_consulta
+from models import ConsultaAgente
+
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS")
 ALLOW_ORIGIN = os.getenv("ALLOW_ORIGIN")
 ALLOW_METHODS = os.getenv("ALLOW_METHODS")
 
 app = FastAPI()
+
+# Variable global para el agente (se inicializa en el startup)
+agente_ejecutor = None
 
 # Middleware CORS
 app.add_middleware(
@@ -31,7 +38,15 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def on_startup():
-    """Crea las tablas en la base de datos al iniciar la aplicación."""
+    """Inicializa el agente AI y crea las tablas en la base de datos."""
+    global agente_ejecutor
+
+    # Inicializar el agente LangChain
+    proveedor = os.getenv("LLM_PROVIDER", "openai")
+    print(f"Inicializando agente AI con proveedor: {proveedor}")
+    agente_ejecutor = crear_agente()
+
+    # Crear tablas en la base de datos
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
