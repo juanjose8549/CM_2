@@ -15,7 +15,7 @@ from agent.herramientas import (
     leer_excel,
     buscar_usuario,
 )
-from agent.prompts import PROMPT_SISTEMA
+from agent.prompts import PROMPT_REACT
 
 
 def crear_agente() -> AgentExecutor:
@@ -42,7 +42,7 @@ def crear_agente() -> AgentExecutor:
             description=(
                 "Actualiza los datos de un usuario existente. "
                 "Recibe user_id (int), nombre (str, opcional), apellido (str, opcional), "
-                "password (str, opcional), activo (bool, opcional). "
+                "password (str, opcional), activo (bool, opcional), updater_id (int, opcional). "
                 "Usa esta herramienta cuando el usuario quiera modificar datos de un usuario."
             ),
         ),
@@ -51,7 +51,7 @@ def crear_agente() -> AgentExecutor:
             func=validar_excel,
             description=(
                 "Valida si un archivo Excel contiene codigo malicioso. "
-                "Recibe ruta_archivo (str). "
+                "Recibe ruta_archivo (str) - la ruta completa al archivo .xlsx. "
                 "Usa SIEMPRE esta herramienta antes de leer un archivo Excel."
             ),
         ),
@@ -60,7 +60,7 @@ def crear_agente() -> AgentExecutor:
             func=leer_excel,
             description=(
                 "Lee el contenido de un archivo Excel previamente validado. "
-                "Recibe ruta_archivo (str). "
+                "Recibe ruta_archivo (str) - la ruta completa al archivo .xlsx. "
                 "SOLO usar despues de validar el archivo con validar_excel."
             ),
         ),
@@ -75,8 +75,10 @@ def crear_agente() -> AgentExecutor:
         ),
     ]
 
-    # Crear el prompt del agente
-    prompt = PromptTemplate.from_template(PROMPT_SISTEMA)
+    # Crear el prompt del agente en formato ReAct
+    # create_react_agent requiere que el template contenga
+    # {tools}, {tool_names} y {agent_scratchpad} como variables
+    prompt = PromptTemplate.from_template(PROMPT_REACT)
 
     # Crear el agente ReAct
     agente = create_react_agent(llm, herramientas, prompt)
@@ -85,7 +87,7 @@ def crear_agente() -> AgentExecutor:
     ejecutor = AgentExecutor(
         agent=agente,
         tools=herramientas,
-        verbose=False,  # Cambiar a True para ver el razonamiento en consola
+        verbose=True,  # Muestra el razonamiento del agente en consola
         handle_parsing_errors=True,
         max_iterations=5,  # Limite para evitar loops infinitos
         max_execution_time=60,  # Timeout de 60 segundos

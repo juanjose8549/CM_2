@@ -56,7 +56,7 @@ def obtener_llm():
             f"para el proveedor '{proveedor}'"
         )
 
-    print(f"🤖 Inicializando LLM con proveedor: '{proveedor}' "
+    print(f"Inicializando LLM con proveedor: '{proveedor}' "
           f"(modelo: {config['modelo']})")
 
     return ChatOpenAI(
