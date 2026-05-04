@@ -1,4 +1,5 @@
 import os
+import asyncio
 import bcrypt
 import tempfile
 import json
@@ -7,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Depends, Header, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from models import User, UserUpdate
 from datetime import datetime
 from database import get_db, audit_collection, engine, Base
@@ -19,16 +20,20 @@ ALLOW_METHODS = os.getenv("ALLOW_METHODS")
 
 app = FastAPI()
 
-# Enable CORS for frontend
+# Middleware CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[f'{ALLOW_ORIGINS}',f'{ALLOW_ORIGIN}'],
+    allow_origins=[f'{ALLOW_ORIGINS}', f'{ALLOW_ORIGIN}'],
     allow_credentials=True,
     allow_methods=[f'{ALLOW_METHODS}'],
     allow_headers=["*"],
 )
 
-Base.metadata.create_all(engine)
+@app.on_event("startup")
+async def on_startup():
+    """Crea las tablas en la base de datos al iniciar la aplicación."""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 @app.post("/excel/validate")
 async def validate_excel(file: UploadFile = File(...)):
@@ -141,13 +146,13 @@ async def read_excel(file: UploadFile = File(...)):
 
 
 @app.patch("/users/{user_id}")
-def update_user(
+async def update_user(
         user_id: int,
         update: UserUpdate,
         updater_id: int = Header(..., alias="X-User-ID"),
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_db),
 ):
-    result = db.execute(select(User).where(User.id == user_id))
+    result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -164,7 +169,11 @@ def update_user(
     if update.surname is not None:
         user.surname = update.surname
     if update.password is not None:
-        user.password_hash = bcrypt.hashpw(update.password.encode(), bcrypt.gensalt()).decode()
+        # Ejecutamos bcrypt en un hilo separado para no bloquear el event loop
+        hashed = await asyncio.to_thread(
+            bcrypt.hashpw, update.password.encode(), bcrypt.gensalt()
+        )
+        user.password_hash = hashed.decode()
     if update.is_active is not None:
         user.is_active = update.is_active
 
