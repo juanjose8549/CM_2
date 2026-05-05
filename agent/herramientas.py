@@ -37,17 +37,54 @@ def _async_run(coro):
     """
     Ejecuta una coroutine de forma segura, detectando si ya hay
     un event loop corriendo (ej: desde FastAPI) o no.
+
+    Importante: NO usa ThreadPoolExecutor porque SQLAlchemy asincrono
+    (asyncpg) necesita ejecutarse en el mismo event loop donde se creo
+    el engine. Usar hilos separados causa:
+      'connection was closed in the middle of operation'
     """
     try:
         loop = asyncio.get_running_loop()
-        # Ya hay un loop (FastAPI ejecutando), crear tarea y esperar
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            future = asyncio.run_coroutine_threadsafe(coro, loop)
-            return future.result(timeout=30)
+        # Ya hay un loop (FastAPI ejecutando). Creamos una tarea
+        # y esperamos de forma bloqueante pero en este mismo hilo.
+        # Usamos asyncio.run_coroutine_threadsafe para asegurar
+        # que se ejecute en el loop correcto, pero sin cambiar de hilo.
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        return future.result(timeout=30)
     except RuntimeError:
         # No hay loop, crear uno nuevo
         return asyncio.run(coro)
+
+
+# ─── listar_usuarios ──────────────────────────────────────────────────────
+
+def listar_usuarios(args_str: str) -> str:
+    """
+    Cuenta y lista los usuarios registrados en la base de datos.
+    Uso: cualquier string (se ignora), ej: 'listar' o 'contar'
+    """
+    async def _run():
+        async for db in get_db():
+            r = await db.execute(select(User))
+            usuarios = r.scalars().all()
+            if not usuarios:
+                return "No hay usuarios registrados en la base de datos."
+
+            total = len(usuarios)
+            activos = sum(1 for u in usuarios if u.is_active)
+            inactivos = total - activos
+
+            lines = [f"Total de usuarios en la base de datos: {total}"]
+            lines.append(f"  Activos: {activos}")
+            lines.append(f"  Inactivos: {inactivos}")
+            lines.append("")
+            lines.append("Listado de usuarios:")
+            for u in usuarios:
+                estado = "Activo" if u.is_active else "Inactivo"
+                lines.append(f"  #{u.id} - {u.name} {u.surname} ({estado})")
+
+            return "\n".join(lines)
+    return _async_run(_run())
 
 
 # ─── buscar_usuario ────────────────────────────────────────────────────────

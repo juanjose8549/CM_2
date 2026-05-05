@@ -12,6 +12,7 @@ from agent.herramientas import (
     validar_excel,
     leer_excel,
     buscar_usuario,
+    listar_usuarios,
 )
 from agent.prompts import PROMPT_SISTEMA
 
@@ -50,6 +51,16 @@ def crear_agente() -> AgentExecutor:
             description=(
                 "Lee contenido de un Excel validado. Input: ruta del archivo. "
                 "Ejemplo: '/ruta/archivo.xlsx'"
+            ),
+        ),
+        Tool(
+            name="listar_usuarios",
+            func=listar_usuarios,
+            description=(
+                "Lista todos los usuarios registrados en la base de datos, "
+                "mostrando su ID, nombre, apellido y estado (activo/inactivo). "
+                "Tambien devuelve el total de usuarios, activos e inactivos. "
+                "Input: cualquier texto (se ignora), ej: 'listar' o 'contar'"
             ),
         ),
     ]
