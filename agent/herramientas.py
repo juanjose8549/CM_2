@@ -157,14 +157,17 @@ async def actualizar_usuario_async(args_str: str) -> str:
 
         u.updated_by = args.get("updater_id", 1)
         u.updated_at = datetime.utcnow()
-        await db.flush()
 
+        # Primero auditoria en MongoDB (no transaccional con Postgres)
         await audit_collection.insert_one({
             "user_id": int(user_id),
             "updated_by": u.updated_by,
             "updated_at": u.updated_at.isoformat(),
             "changes": cambios,
         })
+
+        # Luego commit en PostgreSQL para persistir
+        await db.commit()
 
         return f"Usuario #{user_id} actualizado. Campos: {', '.join(cambios.keys())}"
 
