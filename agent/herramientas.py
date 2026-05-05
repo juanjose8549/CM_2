@@ -1,14 +1,12 @@
 """
 Herramientas (tools) del agente AI.
-Cada herramienta es una funcion decorada con @tool que el agente LangChain
-puede invocar segun lo que decida el LLM.
+Todas las funciones reciven un solo string (tool_input) y lo procesan internamente.
+Esto evita problemas de parseo entre el LLM y LangChain al usar @tool con tipos.
 """
 
 import os
+import json
 import asyncio
-from typing import Optional
-
-from langchain.tools import tool
 
 from excel_validator import validate_excel_safety, get_safe_excel_content
 from models import User
@@ -18,212 +16,187 @@ from datetime import datetime
 import bcrypt
 
 
-# ─── Herramienta: buscar_usuario ───────────────────────────────────────────
-
-@tool
-def buscar_usuario(user_id: int) -> str:
+def _parsear(args_str: str) -> dict:
     """
-    Busca un usuario por su ID y devuelve su informacion.
-
-    Args:
-        user_id: ID numerico del usuario a buscar.
-
-    Returns:
-        str: Datos del usuario formateados o mensaje de no encontrado.
+    Intenta parsear el string como JSON. Si no es JSON,
+    devuelve {'valor': <string_limpio>}.
     """
-    async def _buscar():
+    if not args_str or not args_str.strip():
+        return {}
+    try:
+        data = json.loads(args_str)
+        if isinstance(data, dict):
+            return data
+        return {"valor": data}
+    except (json.JSONDecodeError, ValueError):
+        limpio = args_str.strip().strip('"').strip("'")
+        return {"valor": limpio}
+
+
+def _async_run(coro):
+    """
+    Ejecuta una coroutine de forma segura, detectando si ya hay
+    un event loop corriendo (ej: desde FastAPI) o no.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        # Ya hay un loop (FastAPI ejecutando), crear tarea y esperar
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            future = asyncio.run_coroutine_threadsafe(coro, loop)
+            return future.result(timeout=30)
+    except RuntimeError:
+        # No hay loop, crear uno nuevo
+        return asyncio.run(coro)
+
+
+# ─── buscar_usuario ────────────────────────────────────────────────────────
+
+def buscar_usuario(args_str: str) -> str:
+    """
+    Busca un usuario por su ID.
+    Uso: pasar el ID directamente (ej: '1') o como JSON: {"user_id": 1}
+    """
+    args = _parsear(args_str)
+    try:
+        user_id = int(args.get("user_id", args.get("valor", 0)))
+    except (ValueError, TypeError):
+        return f"No se pudo interpretar '{args_str}' como ID de usuario."
+
+    async def _run():
         async for db in get_db():
-            resultado = await db.execute(select(User).where(User.id == user_id))
-            usuario = resultado.scalar_one_or_none()
-            if not usuario:
+            r = await db.execute(select(User).where(User.id == user_id))
+            u = r.scalar_one_or_none()
+            if not u:
                 return f"Usuario con ID {user_id} no encontrado."
-
             return (
-                f"Datos del usuario #{usuario.id}:\n"
-                f"  - Nombre: {usuario.name}\n"
-                f"  - Apellido: {usuario.surname}\n"
-                f"  - Activo: {'Si' if usuario.is_active else 'No'}\n"
-                f"  - Actualizado por: {usuario.updated_by or 'Nunca'}\n"
-                f"  - Ultima actualizacion: {usuario.updated_at or 'Nunca'}"
+                f"Datos del usuario #{u.id}:\n"
+                f"  Nombre: {u.name}\n"
+                f"  Apellido: {u.surname}\n"
+                f"  Activo: {'Si' if u.is_active else 'No'}"
             )
+    return _async_run(_run())
 
-    return asyncio.run(_buscar())
 
+# ─── actualizar_usuario ─────────────────────────────────────────────────────
 
-# ─── Herramienta: actualizar_usuario ───────────────────────────────────────
-
-@tool
-def actualizar_usuario(
-    user_id: int,
-    nombre: Optional[str] = None,
-    apellido: Optional[str] = None,
-    password: Optional[str] = None,
-    activo: Optional[bool] = None,
-    updater_id: int = 1,
-) -> str:
+def actualizar_usuario(args_str: str) -> str:
     """
-    Actualiza los datos de un usuario existente en la base de datos.
-
-    Args:
-        user_id: ID numerico del usuario a actualizar.
-        nombre: Nuevo nombre del usuario (opcional).
-        apellido: Nuevo apellido del usuario (opcional).
-        password: Nueva contrasena del usuario (opcional).
-        activo: Nuevo estado activo/inactivo (opcional).
-        updater_id: ID del usuario que realiza la actualizacion (por defecto: 1).
-
-    Returns:
-        str: Mensaje con el resultado de la operacion.
+    Actualiza datos de un usuario.
+    Uso: JSON con user_id (requerido), nombre, apellido, password, activo (opcional)
+    Ej: {"user_id": 1, "nombre": "Juan"}
     """
-    async def _actualizar():
+    args = _parsear(args_str)
+    user_id = args.get("user_id")
+    if not user_id:
+        return "Falta 'user_id' en los argumentos."
+
+    async def _run():
         async for db in get_db():
-            # Buscar el usuario
-            resultado = await db.execute(select(User).where(User.id == user_id))
-            usuario = resultado.scalar_one_or_none()
-
-            if not usuario:
+            r = await db.execute(select(User).where(User.id == int(user_id)))
+            u = r.scalar_one_or_none()
+            if not u:
                 return f"Usuario con ID {user_id} no encontrado."
 
-            # Construir registro de cambios
             cambios = {}
-            if nombre is not None:
-                usuario.name = nombre
-                cambios["name"] = nombre
-            if apellido is not None:
-                usuario.surname = apellido
-                cambios["surname"] = apellido
-            if password is not None:
-                if not password.strip():
+            if args.get("nombre"):
+                u.name = args["nombre"]
+                cambios["name"] = args["nombre"]
+            if args.get("apellido"):
+                u.surname = args["apellido"]
+                cambios["surname"] = args["apellido"]
+            if args.get("password"):
+                pw = args["password"]
+                if not pw.strip():
                     return "La contrasena no puede estar vacia."
-                hashed = await asyncio.to_thread(
-                    bcrypt.hashpw, password.encode(), bcrypt.gensalt()
-                )
-                usuario.password_hash = hashed.decode()
+                hashed = await asyncio.to_thread(bcrypt.hashpw, pw.encode(), bcrypt.gensalt())
+                u.password_hash = hashed.decode()
                 cambios["password_updated"] = True
-            if activo is not None:
-                if not isinstance(activo, bool):
-                    return "El campo 'activo' debe ser verdadero o falso."
-                usuario.is_active = activo
-                cambios["is_active"] = activo
+            if args.get("activo") is not None:
+                val = args["activo"]
+                if isinstance(val, bool):
+                    u.is_active = val
+                else:
+                    u.is_active = str(val).lower() in ("true", "1", "si", "yes")
+                cambios["is_active"] = u.is_active
 
             if not cambios:
-                return "No se especificaron campos para actualizar."
+                return "No se especificaron cambios."
 
-            usuario.updated_by = updater_id
-            usuario.updated_at = datetime.utcnow()
-
-            # Guardar en BD
+            u.updated_by = args.get("updater_id", 1)
+            u.updated_at = datetime.utcnow()
             await db.flush()
 
-            # Registrar auditoria en MongoDB
-            registro_auditoria = {
-                "user_id": user_id,
-                "updated_by": updater_id,
-                "updated_at": usuario.updated_at.isoformat(),
+            await audit_collection.insert_one({
+                "user_id": int(user_id),
+                "updated_by": u.updated_by,
+                "updated_at": u.updated_at.isoformat(),
                 "changes": cambios,
-            }
-            await audit_collection.insert_one(registro_auditoria)
+            })
 
-            campos = ", ".join(cambios.keys())
-            return (
-                f"Usuario #{user_id} actualizado correctamente. "
-                f"Campos modificados: {campos}"
-            )
+            return f"Usuario #{user_id} actualizado. Campos: {', '.join(cambios.keys())}"
 
-    return asyncio.run(_actualizar())
+    return _async_run(_run())
 
 
-# ─── Herramienta: validar_excel ────────────────────────────────────────────
+# ─── validar_excel ─────────────────────────────────────────────────────────
 
-@tool
-def validar_excel(ruta_archivo: str) -> str:
+def validar_excel(args_str: str) -> str:
     """
-    Valida si un archivo Excel contiene codigo malicioso (macros, scripts, etc.).
-    Usala SIEMPRE antes de leer el contenido de un archivo Excel.
-
-    Args:
-        ruta_archivo: Ruta completa al archivo .xlsx en el sistema.
-
-    Returns:
-        str: Resultado de la validacion indicando si es seguro o no.
+    Valida si un Excel contiene codigo malicioso.
+    Uso: ruta del archivo o JSON: {"ruta_archivo": "/ruta/doc.xlsx"}
     """
-    if not os.path.exists(ruta_archivo):
-        return f"El archivo '{ruta_archivo}' no existe en la ruta especificada."
+    args = _parsear(args_str)
+    ruta = args.get("ruta_archivo", args.get("valor", ""))
+    if not ruta:
+        return "No se especifico ruta."
+    if not os.path.exists(ruta):
+        return f"No existe: '{ruta}'"
+    if not ruta.endswith(".xlsx"):
+        return f"No es .xlsx: '{ruta}'"
 
-    if not ruta_archivo.endswith(".xlsx"):
-        return f"El archivo '{ruta_archivo}' no es un archivo .xlsx valido."
-
-    resultado = validate_excel_safety(ruta_archivo)
-
-    if resultado["safe"]:
-        celdas = resultado["details"]["cells_analyzed"]
-        hojas = resultado["details"]["sheets"]
-        formulas = resultado["details"]["formulas_found"]
+    res = validate_excel_safety(ruta)
+    if res["safe"]:
         return (
             f"Archivo seguro.\n"
-            f"  - Hojas analizadas: {hojas}\n"
-            f"  - Celdas revisadas: {celdas}\n"
-            f"  - Formulas encontradas: {formulas}\n"
-            f"  - No se detecto codigo malicioso."
+            f"  Hojas: {res['details']['sheets']}\n"
+            f"  Celdas: {res['details']['cells_analyzed']}\n"
+            f"  Formulas: {res['details']['formulas_found']}"
         )
-    else:
-        errores = "\n".join(resultado["errors"][:5])  # Maximo 5 errores
-        patrones = len(resultado["details"]["malicious_patterns_found"])
-        return (
-            f"Archivo potencialmente peligroso.\n"
-            f"  - Patrones maliciosos detectados: {patrones}\n"
-            f"  - Errores:\n{errores}"
-        )
-
-
-# ─── Herramienta: leer_excel ───────────────────────────────────────────────
-
-@tool
-def leer_excel(ruta_archivo: str) -> str:
-    """
-    Lee el contenido de un archivo Excel previamente validado como seguro.
-    SOLO usar despues de haber validado el archivo con la herramienta validar_excel.
-
-    Args:
-        ruta_archivo: Ruta completa al archivo .xlsx en el sistema.
-
-    Returns:
-        str: Contenido del archivo Excel formateado para mostrar al usuario.
-    """
-    if not os.path.exists(ruta_archivo):
-        return f"El archivo '{ruta_archivo}' no existe en la ruta especificada."
-
-    contenido = get_safe_excel_content(ruta_archivo)
-
-    if "error" in contenido:
-        return f"Error al leer el archivo: {contenido['error']}"
-
-    hojas = list(contenido["sheets"].keys())
-    total_filas = contenido["metadata"]["rows"]
-    total_columnas = contenido["metadata"]["columns"]
-
-    # Formatear el contenido para mostrarlo de forma legible
-    resultado = (
-        f"Contenido del archivo:\n"
-        f"  - Hojas: {', '.join(hojas)}\n"
-        f"  - Total filas: {total_filas}\n"
-        f"  - Total columnas: {total_columnas}\n\n"
+    return (
+        f"Archivo PELIGROSO.\n"
+        f"  Patrones: {len(res['details']['malicious_patterns_found'])}\n"
+        f"  Errores: {', '.join(res['errors'][:3])}"
     )
 
-    for nombre_hoja, datos in contenido["sheets"].items():
-        resultado += f"Hoja: '{nombre_hoja}'\n"
-        if not datos:
-            resultado += "  (Hoja vacia)\n"
-            continue
 
-        # Mostrar las primeras 10 filas como vista previa
-        filas_mostrar = datos[:10]
-        for i, fila in enumerate(filas_mostrar):
-            fila_texto = " | ".join(str(c) for c in fila)
-            resultado += f"  Fila {i+1}: {fila_texto}\n"
+# ─── leer_excel ────────────────────────────────────────────────────────────
 
-        if len(datos) > 10:
-            resultado += f"  ... y {len(datos) - 10} filas mas.\n"
-        resultado += "\n"
+def leer_excel(args_str: str) -> str:
+    """
+    Lee el contenido de un Excel previamente validado.
+    Uso: ruta del archivo o JSON: {"ruta_archivo": "/ruta/doc.xlsx"}
+    """
+    args = _parsear(args_str)
+    ruta = args.get("ruta_archivo", args.get("valor", ""))
+    if not ruta:
+        return "No se especifico ruta."
+    if not os.path.exists(ruta):
+        return f"No existe: '{ruta}'"
 
-    return resultado
+    contenido = get_safe_excel_content(ruta)
+    if "error" in contenido:
+        return f"Error: {contenido['error']}"
+
+    lines = [f"Contenido de '{ruta}':"]
+    lines.append(f"  Hojas: {', '.join(contenido['sheets'].keys())}")
+    lines.append(f"  Filas: {contenido['metadata']['rows']}, Columnas: {contenido['metadata']['columns']}")
+
+    for hoja, filas in contenido["sheets"].items():
+        lines.append(f"\n--- {hoja} ---")
+        for i, fila in enumerate(filas[:10]):
+            lines.append(f"  Fila {i+1}: {' | '.join(str(c) for c in fila)}")
+        if len(filas) > 10:
+            lines.append(f"  ... +{len(filas)-10} filas")
+
+    return "\n".join(lines)

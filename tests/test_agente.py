@@ -154,3 +154,61 @@ async def test_ejecutar_consulta_error(monkeypatch):
     respuesta = await ejecutar_consulta(mock_ejecutor, "Hola")
 
     assert "Error de prueba" in respuesta
+
+
+# ─── Tests del endpoint /agent/chat ────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_chat_agente_mensaje_valido():
+    """Verifica que el endpoint /agent/chat responde correctamente."""
+    from main import app
+    import main as main_module
+
+    # Simular que el agente ya esta inicializado
+    mock_agente = MagicMock()
+    async def mock_ainvoke(*args, **kwargs):
+        return {"output": "Respuesta de prueba"}
+    mock_agente.ainvoke = mock_ainvoke
+    main_module.agente_ejecutor = mock_agente
+
+    # Usar TestClient de Starlette directamente
+    from starlette.testclient import TestClient
+    client = TestClient(app)
+    response = client.post("/agent/chat", json={"mensaje": "Hola"})
+
+    assert response.status_code == 200
+    assert "respuesta" in response.json()
+
+
+@pytest.mark.asyncio
+async def test_chat_agente_mensaje_vacio():
+    """Verifica que el endpoint rechaza mensajes vacios."""
+    from main import app
+    import main as main_module
+
+    mock_agente = MagicMock()
+    main_module.agente_ejecutor = mock_agente
+
+    from starlette.testclient import TestClient
+    client = TestClient(app)
+    response = client.post("/agent/chat", json={"mensaje": ""})
+
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_chat_agente_sin_agente():
+    """Verifica que el endpoint da error 503 si el agente no esta inicializado."""
+    from main import app
+    import main as main_module
+
+    main_module.agente_ejecutor = None
+
+    from starlette.testclient import TestClient
+    client = TestClient(app)
+    response = client.post("/agent/chat", json={"mensaje": "Hola"})
+
+    assert response.status_code == 503
+    data = response.json()
+    # FastAPI usa "detail" para los errores HTTPException
+    assert "detail" in data

@@ -16,7 +16,7 @@ from excel_validator import validate_excel_safety, get_safe_excel_content
 
 # ─── Importaciones del agente AI ───
 from agent.agente import crear_agente, ejecutar_consulta
-from models import ConsultaAgente
+from models import ConsultaAgente, RespuestaAgente
 
 ALLOW_ORIGINS = os.getenv("ALLOW_ORIGINS")
 ALLOW_ORIGIN = os.getenv("ALLOW_ORIGIN")
@@ -159,6 +159,49 @@ async def read_excel(file: UploadFile = File(...)):
         except:
             pass
 
+
+# ─── Endpoint del agente AI ───────────────────────────────────────────────
+
+@app.post("/agent/chat", response_model=RespuestaAgente)
+async def chat_con_agente(consulta: ConsultaAgente):
+    """
+    Envia un mensaje en lenguaje natural al agente AI y obtiene una respuesta.
+
+    El agente puede:
+    - Buscar usuarios por ID
+    - Actualizar datos de usuarios (nombre, apellido, contraseña, estado)
+    - Validar archivos Excel
+    - Leer contenido de archivos Excel
+    - Responder preguntas generales
+
+    Ejemplos de consultas:
+    - "Busca el usuario con ID 5"
+    - "Actualiza el usuario 3, cambia su nombre a Juan"
+    - "Desactiva el usuario 7"
+    - "Valida el archivo /ruta/archivo.xlsx"
+    - "Lee el archivo /ruta/archivo.xlsx"
+    """
+    global agente_ejecutor
+
+    if agente_ejecutor is None:
+        raise HTTPException(
+            status_code=503,
+            detail="El agente no esta disponible. Intenta de nuevo en unos segundos."
+        )
+
+    mensaje = consulta.mensaje.strip()
+    if not mensaje:
+        raise HTTPException(
+            status_code=400,
+            detail="El mensaje no puede estar vacio."
+        )
+
+    respuesta = await ejecutar_consulta(agente_ejecutor, mensaje)
+
+    return RespuestaAgente(respuesta=respuesta)
+
+
+# ─── Endpoints existentes ──────────────────────────────────────────────────
 
 @app.patch("/users/{user_id}")
 async def update_user(

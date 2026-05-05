@@ -1,7 +1,5 @@
 """
 Configuracion del agente AI usando LangChain.
-Crea un agente ReAct (Reasoning + Acting) que puede usar herramientas
-para interactuar con el sistema.
 """
 
 from langchain.agents import create_react_agent, AgentExecutor
@@ -15,98 +13,92 @@ from agent.herramientas import (
     leer_excel,
     buscar_usuario,
 )
-from agent.prompts import PROMPT_REACT
+from agent.prompts import PROMPT_SISTEMA
 
 
 def crear_agente() -> AgentExecutor:
-    """
-    Crea y configura el agente LangChain con el LLM seleccionado.
-
-    El agente usa el patron ReAct (Reasoning + Acting) donde:
-    1. Recibe un mensaje del usuario
-    2. El LLM razona que accion tomar
-    3. Ejecuta la herramienta correspondiente
-    4. Analiza el resultado y responde al usuario
-
-    Returns:
-        AgentExecutor: Ejecutor del agente listo para procesar consultas.
-    """
-    # Obtener el modelo de lenguaje configurado
     llm = obtener_llm()
 
-    # Lista de herramientas disponibles para el agente
     herramientas = [
         Tool(
-            name=actualizar_usuario.name,
-            func=actualizar_usuario,
-            description=(
-                "Actualiza los datos de un usuario existente. "
-                "Recibe user_id (int), nombre (str, opcional), apellido (str, opcional), "
-                "password (str, opcional), activo (bool, opcional), updater_id (int, opcional). "
-                "Usa esta herramienta cuando el usuario quiera modificar datos de un usuario."
-            ),
-        ),
-        Tool(
-            name=validar_excel.name,
-            func=validar_excel,
-            description=(
-                "Valida si un archivo Excel contiene codigo malicioso. "
-                "Recibe ruta_archivo (str) - la ruta completa al archivo .xlsx. "
-                "Usa SIEMPRE esta herramienta antes de leer un archivo Excel."
-            ),
-        ),
-        Tool(
-            name=leer_excel.name,
-            func=leer_excel,
-            description=(
-                "Lee el contenido de un archivo Excel previamente validado. "
-                "Recibe ruta_archivo (str) - la ruta completa al archivo .xlsx. "
-                "SOLO usar despues de validar el archivo con validar_excel."
-            ),
-        ),
-        Tool(
-            name=buscar_usuario.name,
+            name="buscar_usuario",
             func=buscar_usuario,
             description=(
-                "Busca un usuario por su ID y devuelve su informacion. "
-                "Recibe user_id (int). "
-                "Usa esta herramienta cuando el usuario pregunte por datos de un usuario."
+                "Busca un usuario por su ID. Input: el ID como numero o JSON. "
+                "Ejemplo: '1' o {\"user_id\": 3}"
+            ),
+        ),
+        Tool(
+            name="actualizar_usuario",
+            func=actualizar_usuario,
+            description=(
+                "Actualiza datos de un usuario. Input: JSON con campos a modificar. "
+                "Ejemplo: {\"user_id\": 1, \"nombre\": \"Juan\"}"
+            ),
+        ),
+        Tool(
+            name="validar_excel",
+            func=validar_excel,
+            description=(
+                "Valida si un Excel tiene codigo malicioso. Input: ruta del archivo. "
+                "Ejemplo: '/ruta/archivo.xlsx'"
+            ),
+        ),
+        Tool(
+            name="leer_excel",
+            func=leer_excel,
+            description=(
+                "Lee contenido de un Excel validado. Input: ruta del archivo. "
+                "Ejemplo: '/ruta/archivo.xlsx'"
             ),
         ),
     ]
 
-    # Crear el prompt del agente en formato ReAct
-    # create_react_agent requiere que el template contenga
-    # {tools}, {tool_names} y {agent_scratchpad} como variables
-    prompt = PromptTemplate.from_template(PROMPT_REACT)
+    # Prompt con instrucciones explicitas para DeepSeek
+    # DeepSeek necesita ver ejemplos concretos del formato esperado
+    template = (
+        "Eres un asistente AI. Sigue el formato paso a paso.\n\n"
+        "{sistema}\n\n"
+        "Herramientas:\n"
+        "{tools}\n\n"
+        "Debes responder con este formato:\n"
+        "Thought: tu razonamiento\n"
+        "Action: nombre de la herramienta de [{tool_names}]\n"
+        "Action Input: string con los argumentos\n"
+        "Observation: resultado de la herramienta\n"
+        "... (repite si es necesario)\n"
+        "Thought: ya tengo la respuesta\n"
+        "Final Answer: tu respuesta\n\n"
+        "Ejemplo:\n"
+        "Question: Busca el usuario 1\n"
+        "Thought: Necesito buscar al usuario con ID 1\n"
+        "Action: buscar_usuario\n"
+        "Action Input: 1\n"
+        "Observation: Datos del usuario...\n"
+        "Thought: Ya tengo los datos\n"
+        "Final Answer: Aqui esta la informacion...\n\n"
+        "Comienza:\n\n"
+        "Question: {input}\n"
+        "Thought:{agent_scratchpad}"
+    )
+    prompt = PromptTemplate.from_template(template)
+    prompt = prompt.partial(sistema=PROMPT_SISTEMA)
 
-    # Crear el agente ReAct
     agente = create_react_agent(llm, herramientas, prompt)
 
-    # Crear el ejecutor del agente
     ejecutor = AgentExecutor(
         agent=agente,
         tools=herramientas,
-        verbose=True,  # Muestra el razonamiento del agente en consola
+        verbose=True,
         handle_parsing_errors=True,
-        max_iterations=5,  # Limite para evitar loops infinitos
-        max_execution_time=60,  # Timeout de 60 segundos
+        max_iterations=15,
+        max_execution_time=60,
     )
 
     return ejecutor
 
 
 async def ejecutar_consulta(ejecutor: AgentExecutor, mensaje: str) -> str:
-    """
-    Envia un mensaje al agente y retorna su respuesta.
-
-    Args:
-        ejecutor: AgentExecutor creado con crear_agente().
-        mensaje: Consulta del usuario en lenguaje natural.
-
-    Returns:
-        str: Respuesta generada por el agente.
-    """
     try:
         resultado = await ejecutor.ainvoke({"input": mensaje})
         return resultado["output"]

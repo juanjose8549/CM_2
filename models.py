@@ -43,3 +43,9 @@ class UserResponse(BaseModel):
 class ConsultaAgente(BaseModel):
     """Esquema para consultas en lenguaje natural al agente."""
     mensaje: str
+
+
+class RespuestaAgente(BaseModel):
+    """Esquema para la respuesta del agente."""
+    respuesta: str
+
