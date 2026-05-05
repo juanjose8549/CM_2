@@ -9,10 +9,15 @@ from langchain.tools import Tool
 from agent.config import obtener_llm
 from agent.herramientas import (
     actualizar_usuario,
+    actualizar_usuario_async,
     validar_excel,
+    validar_excel_async,
     leer_excel,
+    leer_excel_async,
     buscar_usuario,
+    buscar_usuario_async,
     listar_usuarios,
+    listar_usuarios_async,
 )
 from agent.prompts import PROMPT_SISTEMA
 
@@ -24,6 +29,7 @@ def crear_agente() -> AgentExecutor:
         Tool(
             name="buscar_usuario",
             func=buscar_usuario,
+            coroutine=buscar_usuario_async,
             description=(
                 "Busca un usuario por su ID. Input: el ID como numero o JSON. "
                 "Ejemplo: '1' o {\"user_id\": 3}"
@@ -32,6 +38,7 @@ def crear_agente() -> AgentExecutor:
         Tool(
             name="actualizar_usuario",
             func=actualizar_usuario,
+            coroutine=actualizar_usuario_async,
             description=(
                 "Actualiza datos de un usuario. Input: JSON con campos a modificar. "
                 "Ejemplo: {\"user_id\": 1, \"nombre\": \"Juan\"}"
@@ -40,6 +47,7 @@ def crear_agente() -> AgentExecutor:
         Tool(
             name="validar_excel",
             func=validar_excel,
+            coroutine=validar_excel_async,
             description=(
                 "Valida si un Excel tiene codigo malicioso. Input: ruta del archivo. "
                 "Ejemplo: '/ruta/archivo.xlsx'"
@@ -48,6 +56,7 @@ def crear_agente() -> AgentExecutor:
         Tool(
             name="leer_excel",
             func=leer_excel,
+            coroutine=leer_excel_async,
             description=(
                 "Lee contenido de un Excel validado. Input: ruta del archivo. "
                 "Ejemplo: '/ruta/archivo.xlsx'"
@@ -56,6 +65,7 @@ def crear_agente() -> AgentExecutor:
         Tool(
             name="listar_usuarios",
             func=listar_usuarios,
+            coroutine=listar_usuarios_async,
             description=(
                 "Lista todos los usuarios registrados en la base de datos, "
                 "mostrando su ID, nombre, apellido y estado (activo/inactivo). "
