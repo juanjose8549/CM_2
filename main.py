@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from models import User, UserUpdate
 from datetime import datetime
-from database import get_db, audit_collection, engine, Base
+from database import get_db, audit_collection, engine, Base, mongo_client
 from excel_validator import validate_excel_safety, get_safe_excel_content
 
 # ─── Importaciones del agente AI ───
@@ -49,6 +49,26 @@ async def on_startup():
     # Crear tablas en la base de datos
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    """
+    Apagado graceful: cierra conexiones a bases de datos y el pool de SQLAlchemy.
+    Railway y otros PaaS envian SIGTERM; este hook asegura un cierre ordenado.
+    """
+    print("Iniciando apagado graceful del servidor...")
+    
+    # Cerrar pool de PostgreSQL (libera conexiones pendientes)
+    await engine.dispose()
+    print("Pool de PostgreSQL cerrado.")
+    
+    # Cerrar conexion de MongoDB
+    mongo_client.close()
+    print("Conexion de MongoDB cerrada.")
+    
+    print("Apagado graceful completado.")
+
 
 @app.post("/excel/validate")
 async def validate_excel(file: UploadFile = File(...)):
@@ -248,6 +268,6 @@ async def update_user(
         "updated_at": user.updated_at.isoformat(),
         "changes": changes
     }
-    audit_collection.insert_one(log)
+    await audit_collection.insert_one(log)
 
     return {"message": "User updated successfully"}
