@@ -16,10 +16,14 @@ def test_proveedores_soportados():
     """Verifica que los proveedores configurados sean validos."""
     assert "openai" in PROVEEDORES
     assert "deepseek" in PROVEEDORES
+    assert "nvidia" in PROVEEDORES
     assert "modelo" in PROVEEDORES["openai"]
     assert "modelo" in PROVEEDORES["deepseek"]
+    assert "modelo" in PROVEEDORES["nvidia"]
     assert "base_url" in PROVEEDORES["openai"]
     assert "base_url" in PROVEEDORES["deepseek"]
+    assert "base_url" in PROVEEDORES["nvidia"]
+    assert "alternativos" in PROVEEDORES["nvidia"]
 
 
 def test_obtener_llm_openai(monkeypatch):
@@ -88,6 +92,80 @@ def test_falta_api_key_deepseek(monkeypatch):
 
     with pytest.raises(ValueError, match="Falta la variable de entorno"):
         obtener_llm()
+
+
+def test_obtener_llm_nvidia(monkeypatch):
+    """Verifica que se configure NVIDIA NIM correctamente."""
+    monkeypatch.setenv("LLM_PROVIDER", "nvidia")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+
+    with patch("agent.config.ChatOpenAI") as mock_chat:
+        mock_instance = MagicMock()
+        mock_chat.return_value = mock_instance
+
+        llm = obtener_llm()
+
+        mock_chat.assert_called_once_with(
+            model="meta/llama-3.3-70b-instruct",
+            api_key="nvapi-test-key",
+            base_url="https://integrate.api.nvidia.com/v1",
+            temperature=0.1,
+            max_tokens=4096,
+        )
+        assert llm == mock_instance
+
+
+def test_obtener_llm_nvidia_modelo_personalizado(monkeypatch):
+    """Verifica que se pueda cambiar el modelo de NVIDIA con variable de entorno."""
+    monkeypatch.setenv("LLM_PROVIDER", "nvidia")
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+    monkeypatch.setenv("LLM_MODEL", "mistralai/mistral-large")
+
+    with patch("agent.config.ChatOpenAI") as mock_chat:
+        mock_instance = MagicMock()
+        mock_chat.return_value = mock_instance
+
+        llm = obtener_llm()
+
+        mock_chat.assert_called_once_with(
+            model="mistralai/mistral-large",
+            api_key="nvapi-test-key",
+            base_url="https://integrate.api.nvidia.com/v1",
+            temperature=0.1,
+            max_tokens=4096,
+        )
+        assert llm == mock_instance
+
+
+def test_falta_api_key_nvidia(monkeypatch):
+    """Verifica que lanza error si falta la API key de NVIDIA."""
+    monkeypatch.setenv("LLM_PROVIDER", "nvidia")
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+
+    with pytest.raises(ValueError, match="Falta la variable de entorno"):
+        obtener_llm()
+
+
+def test_obtener_llm_con_llm_model_global(monkeypatch):
+    """Verifica que LLM_MODEL funciona para cualquier proveedor."""
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_MODEL", "gpt-4")
+
+    with patch("agent.config.ChatOpenAI") as mock_chat:
+        mock_instance = MagicMock()
+        mock_chat.return_value = mock_instance
+
+        llm = obtener_llm()
+
+        mock_chat.assert_called_once_with(
+            model="gpt-4",
+            api_key="test-key",
+            base_url=None,
+            temperature=0.1,
+            max_tokens=4096,
+        )
+        assert llm == mock_instance
 
 
 # ─── Tests del agente ──────────────────────────────────────────────────────

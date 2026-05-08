@@ -4,7 +4,7 @@ This is a FastAPI service for updating user accounts using PostgreSQL and MongoD
 
 ## Features
 
-- **AI Agent**: Natural language interface using LangChain with support for OpenAI and DeepSeek LLMs
+- **AI Agent**: Natural language interface using LangChain with support for OpenAI, DeepSeek, and NVIDIA NIM LLMs
 - **User Management**: Update user accounts via REST API or AI agent
 - **Excel Validation**: Scan Excel files for malicious content (macros, scripts, etc.)
 - **Audit Logging**: Track all changes in MongoDB
@@ -25,9 +25,13 @@ This is a FastAPI service for updating user accounts using PostgreSQL and MongoD
    MONGO_URL=mongodb://localhost:27017
 
    # LLM Provider (choose one)
-   LLM_PROVIDER=openai     # or "deepseek"
+   LLM_PROVIDER=openai     # or "deepseek" or "nvidia"
    OPENAI_API_KEY=sk-your-openai-key
    DEEPSEEK_API_KEY=sk-your-deepseek-key
+   NVIDIA_API_KEY=nvapi-your-nvidia-key  # Gratis en build.nvidia.com
+
+   # Modelo (opcional, funciona para cualquier proveedor)
+   # LLM_MODEL=meta/llama-3.1-8b-instruct
 
    # CORS (optional)
    ALLOW_ORIGINS=*
@@ -103,12 +107,15 @@ The service includes an intelligent AI agent that understands natural language r
 
 ### Supported LLM Providers
 
-| Provider | Model | Environment Variable |
-|---|---|---|
-| **OpenAI** | `gpt-4o-mini` | `OPENAI_API_KEY` |
-| **DeepSeek** | `deepseek-chat` | `DEEPSEEK_API_KEY` |
+| Provider | Default Model | Environment Variable | Cost |
+|---|---|---|---|
+| **OpenAI** | `gpt-4o-mini` | `OPENAI_API_KEY` | Pago por uso |
+| **DeepSeek** | `deepseek-chat` | `DEEPSEEK_API_KEY` | Económico |
+| **NVIDIA NIM** | `meta/llama-3.3-70b-instruct` | `NVIDIA_API_KEY` | **Gratuito** (con rate limit) |
 
-Set `LLM_PROVIDER=openai` or `LLM_PROVIDER=deepseek` in `.env` to switch between providers.
+> **NVIDIA**: Regístrate gratis en [build.nvidia.com](https://build.nvidia.com) para obtener tu API Key. Tiene rate limits generosos para desarrollo y pruebas. Puedes cambiar el modelo con `LLM_MODEL` (ej: `LLM_MODEL=mistralai/mistral-large`, `LLM_MODEL=google/gemma-3-12b-it`, etc.).
+
+Set `LLM_PROVIDER=openai`, `LLM_PROVIDER=deepseek`, or `LLM_PROVIDER=nvidia` in `.env` to switch between providers.
 
 ### Agent Capabilities
 

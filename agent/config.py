@@ -1,6 +1,7 @@
 """
 Configuración del modelo de lenguaje (LLM) para el agente.
-Soporta múltiples proveedores: OpenAI, DeepSeek, y otros compatibles con la API de OpenAI.
+Soporta múltiples proveedores: OpenAI, DeepSeek, NVIDIA NIM, y otros
+compatibles con la API de OpenAI.
 """
 
 import os
@@ -19,6 +20,23 @@ PROVEEDORES = {
         "base_url": "https://api.deepseek.com/v1",
         "descripcion": "DeepSeek Chat (modelo eficiente y económico)",
     },
+    "nvidia": {
+        "modelo": "meta/llama-3.3-70b-instruct",
+        "base_url": "https://integrate.api.nvidia.com/v1",
+        "descripcion": "NVIDIA NIM: Llama 3.3 70B (gratuito con rate limit, requiere registro en build.nvidia.com)",
+        "alternativos": [
+            "meta/llama-3.1-8b-instruct",
+            "meta/llama-3.1-70b-instruct",
+            "meta/llama-3.2-3b-instruct",
+            "mistralai/mistral-large",
+            "mistralai/mixtral-8x7b-instruct-v0.1",
+            "google/gemma-3-12b-it",
+            "google/gemma-2-2b-it",
+            "microsoft/phi-4-mini-instruct",
+            "qwen/qwen2.5-coder-32b-instruct",
+            "deepseek-ai/deepseek-coder-6.7b-instruct",
+        ],
+    },
 }
 
 
@@ -27,9 +45,13 @@ def obtener_llm():
     Configura y retorna el modelo de lenguaje según la variable LLM_PROVIDER.
 
     Lee del archivo .env:
-        LLM_PROVIDER: "openai" (por defecto) o "deepseek"
+        LLM_PROVIDER: "openai" (por defecto), "deepseek" o "nvidia"
         OPENAI_API_KEY: clave API de OpenAI (si el proveedor es openai)
         DEEPSEEK_API_KEY: clave API de DeepSeek (si el proveedor es deepseek)
+        NVIDIA_API_KEY: clave API de NVIDIA NIM (si el proveedor es nvidia)
+
+    Opcionalmente, se puede sobrescribir el modelo con LLM_MODEL:
+        LLM_MODEL: "gpt-4o" (para openai) o "mistralai/mistral-large" (para nvidia)
 
     Returns:
         ChatOpenAI: Instancia configurada del modelo de lenguaje.
@@ -56,11 +78,15 @@ def obtener_llm():
             f"para el proveedor '{proveedor}'"
         )
 
+    # Permitir sobrescribir el modelo desde variable de entorno
+    # LLM_MODEL funciona para cualquier proveedor
+    modelo = os.getenv("LLM_MODEL", config["modelo"])
+
     print(f"Inicializando LLM con proveedor: '{proveedor}' "
-          f"(modelo: {config['modelo']})")
+          f"(modelo: {modelo})")
 
     return ChatOpenAI(
-        model=config["modelo"],
+        model=modelo,
         api_key=api_key,
         base_url=config["base_url"],
         temperature=0.1,   # Baja temperatura = respuestas más precisas
